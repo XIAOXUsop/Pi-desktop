@@ -137,7 +137,7 @@ npm run test:all     # 完整离线测试、覆盖率和真实 Electron 窗口�
 | `packages/pi-workflows/` | `/plan` 与 `/goal` Pi 扩展 |
 | `src/` | 独立 TypeScript 编程助手核心、CLI、模型协议和文件工具 |
 | `test/` | 单元、集成及回归测试 |
-| `scripts/` | 开发启动、模型目录维护、测试、打包与安装脚本 |
+| `scripts/` | 开发启动、测试、打包与安装脚本 |
 | `configs/` | 不含密钥的默认模型配置 |
 
 ## 第三方资源

@@ -19,3 +19,21 @@ keys.json
 auth.json
 *.pem
 *.key
+
+# Local tooling retained for historical research and legacy source shortcuts.
+/scripts/build-model-catalog.mjs
+/scripts/fetch-model-sources.mjs
+/scripts/fetch-model-details.mjs
+/scripts/model-source-utils.mjs
+/scripts/create-desktop-shortcut.ps1
+/scripts/launch-desktop.ps1
+/build/app.png
+
+# Editor metadata and generated caches.
+.idea/
+.vscode/
+.codex/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+.npmrc
