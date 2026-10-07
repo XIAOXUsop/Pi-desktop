@@ -12,6 +12,7 @@ build/runtime/
 docs/
 examples/
 README.md
+!/README.md
 *.lnk
 models.json
 keys.json
