@@ -1,0 +1,10 @@
+import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const require = createRequire(import.meta.url); const binary = require('electron');
+const environment = { ...process.env }; delete environment.ELECTRON_RUN_AS_NODE;
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const child = spawn(binary, [resolve(root, 'desktop/main.mjs'), ...process.argv.slice(2)], { cwd: root, env: environment, windowsHide: true, stdio: 'inherit' });
+child.on('error', error => { process.stderr.write(error.message + '\n'); process.exitCode = 1; });
+child.on('exit', code => { process.exitCode = code ?? 1; });

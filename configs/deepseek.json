@@ -1,0 +1,31 @@
+{
+  "defaultModel": "deepseek/deepseek-flash",
+  "providers": [
+    {
+      "id": "deepseek",
+      "protocol": "openai-chat",
+      "baseUrl": "https://api.deepseek.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "tokenLimitField": "max_tokens",
+      "streamUsage": true,
+      "thinking": "disabled",
+      "timeoutMs": 120000
+    }
+  ],
+  "models": [
+    {
+      "provider": "deepseek",
+      "id": "deepseek-flash",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 393216,
+      "tools": true
+    },
+    {
+      "provider": "deepseek",
+      "id": "deepseek-v4-pro",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 393216,
+      "tools": true
+    }
+  ]
+}

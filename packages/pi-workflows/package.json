@@ -1,0 +1,10 @@
+{
+  "name": "local-pi-workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Pi planning and goal workflows with portable desktop interaction",
+  "keywords": ["pi-package"],
+  "pi": {"extensions": ["extensions/plan.ts", "extensions/goal.ts"]},
+  "peerDependencies": {"@earendil-works/pi-coding-agent": "^1.0.1", "typebox": "*"}
+}

@@ -1,0 +1,46 @@
+{
+  "name": "pi-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi-desktop local coding agent desktop application",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": "./dist/src/index.js"
+  },
+  "types": "./dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "demo": "npm run build && node dist/src/cli.js demo",
+    "agent": "node dist/src/cli.js",
+    "desktop": "npm run build && node scripts/start-desktop.mjs",
+    "desktop:demo": "npm run build && node scripts/start-desktop.mjs --demo",
+    "desktop:smoke": "npm run build && node scripts/start-desktop.mjs --smoke",
+    "desktop:live": "npm run build && node scripts/start-desktop.mjs --live-smoke",
+    "test:desktop": "npm run build && node --test test/desktop.test.mjs test/pi-desktop.test.mjs test/execution-ui.test.mjs test/resource-market.test.mjs test/pi-input.test.mjs test/workflows.test.mjs test/model-catalog.test.mjs",
+    "acceptance:live": "npm run build && node scripts/live-acceptance.mjs",
+    "test:all": "node scripts/full-test.mjs",
+    "test:all:live": "node scripts/full-test.mjs --live",
+    "package:verify": "node scripts/verify-package.mjs",
+    "package:win": "npm run build && powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/create-app-icon.ps1 && node scripts/prepare-desktop-package.mjs && electron-builder --config electron-builder.cjs --win --x64 --dir --publish never && npm run package:verify && electron-builder --config electron-builder.cjs --win --x64 --prepackaged release/win-unpacked --publish never"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/pi-coding-agent": "1.0.1",
+    "@earendil-works/pi-tui": "1.0.1",
+    "ajv": "8.20.0",
+    "diff": "9.0.0",
+    "marked": "18.0.14"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "typescript": "5.9.3"
+  },
+  "main": "desktop/bootstrap.cjs"
+}

@@ -1,0 +1,4 @@
+export const plain = html => html.replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|#160);/g,' ').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/\s+/g,' ').trim();
+export function aliyunContent(html){const m=html.match(/"content":("(?:\\.|[^"\\])*")/);return m?JSON.parse(m[1]):html;}
+export function nextPayload(html){return Array.from(html.matchAll(/self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)/g),m=>JSON.parse(m[1])).join('');}
+export function jsonAt(text,start){let depth=0,quoted=false,escape=false;for(let i=start;i<text.length;i++){const c=text[i];if(quoted){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')quoted=false;}else if(c==='"')quoted=true;else if(c==='['||c==='{')depth++;else if(c===']'||c==='}'){if(--depth===0)return JSON.parse(text.slice(start,i+1));}}throw new Error('Incomplete JSON');}

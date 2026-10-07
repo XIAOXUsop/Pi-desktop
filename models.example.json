@@ -1,0 +1,15 @@
+{
+  "defaultModel": "local/replace-with-your-tool-capable-model",
+  "providers": [
+    { "id": "local", "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:11434/v1", "tokenLimitField": "max_tokens", "streamUsage": false },
+    { "id": "openai", "protocol": "openai-responses", "baseUrl": "https://api.openai.com/v1", "apiKeyEnv": "OPENAI_API_KEY" },
+    { "id": "anthropic", "protocol": "anthropic", "baseUrl": "https://api.anthropic.com/v1", "apiKeyEnv": "ANTHROPIC_API_KEY" },
+    { "id": "compatible", "protocol": "openai-chat", "baseUrl": "https://your-provider.example/v1", "apiKeyEnv": "CODING_MODEL_API_KEY", "tokenLimitField": "max_tokens" }
+  ],
+  "models": [
+    { "provider": "local", "id": "replace-with-your-tool-capable-model", "contextWindow": 32768, "maxOutputTokens": 4096, "tools": true },
+    { "provider": "openai", "id": "replace-with-your-accessible-model", "contextWindow": 32768, "maxOutputTokens": 4096, "tools": true },
+    { "provider": "anthropic", "id": "replace-with-your-accessible-model", "contextWindow": 32768, "maxOutputTokens": 4096, "tools": true },
+    { "provider": "compatible", "id": "replace-with-your-model", "contextWindow": 32768, "maxOutputTokens": 4096, "tools": true }
+  ]
+}
