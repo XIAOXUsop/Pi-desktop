@@ -20,12 +20,12 @@
 
 | 发行文件 | 使用方式 |
 | --- | --- |
-| `Pi-desktop-Setup-0.1.0-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
-| `Pi-desktop-0.1.0-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
+| `Pi-desktop-Setup-0.1.1-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
+| `Pi-desktop-0.1.1-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
 
 免安装版需要保留解压后的完整目录，不能只复制 exe。项目所需的 Git、Python、Java 等工具由项目环境提供。
 
-仓库只保存源码和必要文件，不包含安装包。Windows x64 发行文件可按下方步骤自行构建。
+仓库只保存源码和必要文件，安装包不放入 Git。对外分发使用 [GitHub Releases](https://github.com/XIAOXUsop/Pi-desktop/releases)：发布版本后，在 Assets 中选择安装版 exe 或免安装版 ZIP；页面没有 Assets 时表示尚未上传安装包。**Code → Download ZIP 下载的是源码，不能直接安装。** Windows x64 发行文件也可按下方步骤自行构建。
 
 ### 模型与密钥
 

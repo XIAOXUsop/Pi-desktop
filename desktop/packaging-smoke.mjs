@@ -14,6 +14,8 @@ export async function runPackagingSmoke({window,actions,settings,project}){
   checks.push('bundled Node and npm take precedence without a system Node installation');
   await until(()=>js("document.getElementById('model-select').value==='demo/offline'&&!document.getElementById('send').disabled"),'renderer ready');
   assert(await js("document.querySelector('.brand strong').textContent==='Pi-desktop'"));
+  await until(()=>js("document.querySelector('.brand-mark img')?.complete&&document.querySelector('.brand-mark img')?.naturalWidth>0"),'application brand image');
+  checks.push('application brand SVG loads through the packaged local protocol');
   assert.equal(await js('typeof require'),'undefined');
   checks.push('real renderer and isolated preload bridge');
   const first=await actions.state();assert.equal(first.agent.engine,'pi');

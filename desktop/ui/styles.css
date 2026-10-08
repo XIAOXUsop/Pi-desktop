@@ -88,7 +88,7 @@ kbd { font:var(--caption-size) var(--ui-font); color:var(--muted); white-space:n
 .sidebar { width:232px; flex-shrink:0; background:var(--surface); display:flex; flex-direction:column; padding:20px 12px 12px; }
 .brand { display:flex; align-items:center; gap:10px; padding:0 4px; margin-bottom:20px; }
 .brand-mark { display:inline-flex; color:var(--ink); }
-.brand-mark .ui-icon { width:24px; height:24px; }
+.brand-mark img { display:block; width:30px; height:30px; }
 .brand strong { font-size:14px; font-weight:600; }
 .brand .icon-button { margin-left:auto; }
 .open-project { display:flex; align-items:center; gap:9px; padding:10px; min-height:40px; border-radius:var(--control-radius); background:var(--paper); text-align:left; }

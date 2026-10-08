@@ -185,7 +185,7 @@ const actions = {
 app.whenReady().then(async () => {
   protocol.handle('local-agent', async request => {
     const url = new URL(request.url); const allowed = { '/index.html': 'text/html', '/styles.css': 'text/css', '/renderer.js': 'text/javascript', '/extension-ui.js':'text/javascript', '/pi-commands.js':'text/javascript', '/prompt-completion.js':'text/javascript', '/project-navigation.js':'text/javascript', '/execution-ui.js': 'text/javascript', '/assistant-presentation.js': 'text/javascript', '/resources-ui.js': 'text/javascript', '/message-actions.js': 'text/javascript', '/icons.js': 'text/javascript', '/markdown.js': 'text/javascript', '/review.js': 'text/javascript', '/marked.js': 'text/javascript' };
-    allowed['/provider-avatar.js']='text/javascript';allowed['/provider-logos.svg']='image/svg+xml';
+    allowed['/provider-avatar.js']='text/javascript';allowed['/provider-logos.svg']='image/svg+xml';allowed['/app-mark.svg']='image/svg+xml';
     if (url.hostname !== 'app' || !Object.hasOwn(allowed, url.pathname)) return new Response('Not found', { status: 404 });
     const asset = url.pathname === '/marked.js' ? resolve(project, 'node_modules/marked/lib/marked.esm.js') : resolve(directory, 'ui', url.pathname.slice(1));
     return new Response(await readFile(asset), { headers: { 'Content-Type': `${allowed[url.pathname]}; charset=utf-8`,
