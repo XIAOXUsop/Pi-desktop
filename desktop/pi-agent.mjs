@@ -2,7 +2,7 @@ import { readFile, mkdir, lstat } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, sep, dirname } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { createAgentSession, ModelRuntime, DefaultResourceLoader, SessionManager, SettingsManager, withFileMutationQueue } from '@earendil-works/pi-coding-agent';
+import { createAgentSession, ModelRuntime, DefaultResourceLoader, SessionManager, SettingsManager, withFileMutationQueue } from './pi-runtime.mjs';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { getCurrentSystemPrompt, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript';
 import { streamSimple as openAIChatStream } from '@earendil-works/pi-ai/api/openai-completions';

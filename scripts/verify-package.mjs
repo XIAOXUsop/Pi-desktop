@@ -1,8 +1,9 @@
-import {mkdir,mkdtemp,readFile,writeFile,readdir} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,writeFile,readdir,stat} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const executable=resolve(process.argv[2]||resolve(root,'release/win-unpacked/Pi-desktop.exe'));
 const folder=resolve(root,'.agent/verification/package');await mkdir(folder,{recursive:true});
@@ -17,7 +18,11 @@ const code=await new Promise((accept,reject)=>{child.once('error',reject);child.
 await writeFile(resolve(profile,'launch.log'),output);
 assert.equal(code,0,output);
 const report=JSON.parse(await readFile(resolve(profile,'verification/package-check.json'),'utf8'));assert.deepEqual(report.errors,[]);
-const bundle=resolve(dirname(executable),'resources/app'),top=await readdir(bundle);
-for(const forbidden of ['.agent','.env','.npmrc','research','test','scripts','configs/keys.json'])assert(!top.includes(forbidden),'Personal and development files excluded: '+forbidden);
+const archive=resolve(dirname(executable),'resources/app.asar'),packed=await stat(archive).then(()=>true,()=>false);
+const bundle=packed?archive:resolve(dirname(executable),'resources/app');
+const entries=packed?createRequire(import.meta.url)('@electron/asar').listPackage(archive).map(path=>path.replaceAll('\\','/').replace(/^\//,'')):await readdir(bundle,{recursive:true});
+const normalized=entries.map(path=>path.replaceAll('\\','/'));
+const top=[...new Set(normalized.map(path=>path.split('/')[0]))];
+for(const forbidden of ['.agent','.git','.env','.npmrc','research','test','scripts','configs/keys.json','configs/auth.json'])assert(!normalized.some(path=>path===forbidden || path.startsWith(forbidden+'/')),'Personal and development files excluded: '+forbidden);
 await writeFile(resolve(folder,'latest.json'),JSON.stringify({...report,profile,bundleTopLevel:top,systemNodeRemovedFromPath:true},null,2));
 console.log(JSON.stringify({executable,checks:report.checks.length,errors:report.errors,profile,systemNodeRemovedFromPath:true}));

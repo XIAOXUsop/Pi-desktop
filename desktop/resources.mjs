@@ -1,7 +1,7 @@
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { resolve, dirname, basename, relative } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DefaultPackageManager, SettingsManager, loadSkills, ProjectTrustStore } from '@earendil-works/pi-coding-agent';
+import { DefaultPackageManager, SettingsManager, loadSkills, ProjectTrustStore } from './pi-core.mjs';
 import { atomicJson } from './settings.mjs';
 
 const types = ['extensions', 'skills', 'prompts', 'themes'];

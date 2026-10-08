@@ -2,6 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createPersistentKeyReader} from '../desktop/environment-keys.mjs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+
+test('desktop bootstrap imports do not evaluate Pi CLI or terminal entrypoints',async()=>{
+  const probe=`import {Session} from 'node:inspector';import {promisify} from 'node:util';
+    const session=new Session();session.connect();const post=promisify(session.post.bind(session));
+    await post('Profiler.enable');await post('Profiler.startPreciseCoverage',{callCount:true});
+    await import(${JSON.stringify(new URL('../desktop/resources.mjs',import.meta.url).href)});
+    await import(${JSON.stringify(new URL('../desktop/pi-native.mjs',import.meta.url).href)});
+    const coverage=await post('Profiler.takePreciseCoverage');session.disconnect();
+    console.log(JSON.stringify(coverage.result.map(script=>script.url)));`;
+  const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',probe],{windowsHide:true,timeout:30000,maxBuffer:2*1024*1024});
+  const modules=JSON.parse(stdout).map(url=>url.replaceAll('\\','/'));
+  for(const path of ['dist/index.js','dist/main.js','dist/modes/index.js'])assert(!modules.some(url=>url.endsWith('/pi-coding-agent/'+path)),'Unneeded Pi entrypoint loaded: '+path);
+  assert(modules.some(url=>url.endsWith('/pi-coding-agent/dist/core/package-manager.js')));
+});
+
+test('selective core loading preserves public Pi SDK class and function identity',async()=>{
+  const [core,runtime,sdk]=await Promise.all([import('../desktop/pi-core.mjs'),import('../desktop/pi-runtime.mjs'),import('@earendil-works/pi-coding-agent')]);
+  for(const name of ['DefaultPackageManager','SettingsManager','loadSkills','ProjectTrustStore','SessionManager','createEventBus'])assert.equal(core[name],sdk[name],name);
+  for(const name of ['createAgentSession','ModelRuntime','DefaultResourceLoader','withFileMutationQueue'])assert.equal(runtime[name],sdk[name],name);
+});
 
 const missing=()=>Object.assign(new Error('Fixture variable not found'),{code:1});
 const registry=(name,value,type='SZ')=>({stdout:Buffer.from(`HKEY_CURRENT_USER\\Environment\r\n    ${name}    REG_${type}    ${value}\r\n`)});

@@ -9,11 +9,9 @@ import { ProjectFiles, CONTEXT_FILE_LIMITS } from './project-files.mjs';
 import { deleteSessionFiles } from './session-files.mjs';
 import { listProjectSessions, selectProjectSession } from './project-sessions.mjs';
 import { providerPresets, providerName, officialModelLimits } from './provider-presets.mjs';
-import { ResourceManager } from './resources.mjs';
 import { ResourceMarket } from './resource-market.mjs';
-import {piBuiltinCommands} from './pi-native.mjs';
-import {piHostActions} from './pi-host-actions.mjs';
 const resourceMarket = new ResourceMarket();
+let piBuiltinCommands=[];
 startup.mark('imports-ready');
 
 const directory = dirname(fileURLToPath(import.meta.url)); const project = resolve(directory, '..');
@@ -96,7 +94,11 @@ async function rememberProject() {
   await settings.save();
 }
 async function reloadWorker() { if (current?.sessionPath) await openProject(current.workspace, current.sessionPath, {force:true}); else await stopWorker(); }
-function commandHost() {return piHostActions({settings,resources,worker:()=>worker,current:()=>current,window:()=>window,dialog,app,state,exclusive,openProject,reloadWorker});}
+let hostModule;
+async function commandHost() {
+  const {piHostActions}=await (hostModule ??= import('./pi-host-actions.mjs'));
+  return piHostActions({settings,resources,worker:()=>worker,current:()=>current,window:()=>window,dialog,app,state,exclusive,openProject,reloadWorker});
+}
 async function knownProject(path=current?.workspace) {
   if(typeof path!=='string' || !settings.data.recentProjects.includes(path)) throw new Error('请通过打开项目选择文件夹');
   const canonical=await realpath(path);if(!(await stat(canonical)).isDirectory()) throw new Error('项目文件夹不可用');return canonical;
@@ -106,8 +108,8 @@ const actions = {
   async startupReady({phase}={}) { if(!['renderer-state','renderer-history','renderer-ready'].includes(phase))throw new Error('Invalid startup stage');startup.mark(phase);return null; },
   async extensionCommand({prompt}) {if(changing || !worker || typeof prompt!=='string' || prompt.length>256*1024)throw new Error('请选择有效扩展指令');return worker.request('command',{prompt});},
   async extensionResponse(input) {if(!worker || changing)throw new Error('会话已切换');return worker.request('extension_response',input);},
-  completePrompt:input=>commandHost().completePrompt(input),
-  piAction:input=>commandHost().piAction(input),
+  completePrompt:async input=>(await commandHost()).completePrompt(input),
+  piAction:async input=>(await commandHost()).piAction(input),
   async listProjectSessions({path}={}) {const workspace=await knownProject(path);return {path:workspace,sessions:await listProjectSessions(workspace,settings,current?.workspace===workspace?current.sessionPath:undefined)};},
   async searchResourceMarket(input) { return resourceMarket.search(input); },
   async resourceMarketDetail(input) { return resourceMarket.detail(input); },
@@ -126,7 +128,7 @@ const actions = {
   async reloadResources() { return exclusive(async () => {await reloadWorker(); return actions.listResources();}); },
   async sessionInfo() {if(workerOpening) await workerOpening;if(!worker || !current?.sessionId) throw new Error('请先选择或新建会话');return worker.request('session_info');},
   async compactSession({instructions=''}={}) {return exclusive(async()=>{if(!worker || !current?.sessionId) throw new Error('请先选择会话');const result=await worker.request('compact',{instructions},600000);return {result,state:await state()};});},
-  exportSession:input=>commandHost().exportSession(input),
+  exportSession:async input=>(await commandHost()).exportSession(input),
   async copyText({ text }) { if (typeof text !== 'string' || Buffer.byteLength(text) > 1024 * 1024) throw new Error('复制内容过大'); await clipboard.writeText(text); return true; },
   async openLink({ url }) { if (typeof url !== 'string' || url.length > 4096) throw new Error('无效链接'); const target = new URL(url); if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) throw new Error('只打开网页链接'); await shell.openExternal(target.href); return true; },
   async chooseProject() {
@@ -220,13 +222,16 @@ app.whenReady().then(async () => {
   });
   window.on('close', event => { if (!shuttingDown && worker) { event.preventDefault(); shuttingDown = true; void stopWorker().finally(() => app.quit()); } });
   initialization=(async()=>{
-    settings = await new SettingsStore(app.getPath('userData'), resolve(project, 'configs/deepseek.json'), vault,stage=>startup.mark(stage)).load();
-    startup.mark('settings-ready');
+    const [loaded,[{ResourceManager},{piBuiltinCommands:commands}]]=await Promise.all([
+      new SettingsStore(app.getPath('userData'), resolve(project, 'configs/deepseek.json'), vault,stage=>startup.mark(stage)).load().then(value=>{startup.mark('settings-ready');return value;}),
+      Promise.all([import('./resources.mjs'),import('./pi-native.mjs')]).then(value=>{startup.mark('pi-core-ready');return value;}),
+    ]);
+    settings=loaded;piBuiltinCommands=commands;
     resources = await new ResourceManager(app.getPath('userData')).load();
-    await resources.installBundledWorkflows(resolve(project,'packages/pi-workflows'));
+    await resources.installBundledWorkflows(app.isPackaged ? resolve(process.resourcesPath,'pi-workflows') : resolve(project,'packages/pi-workflows'));
     startup.mark('resources-ready');
     if (demo) {
-      const folder = resolve(packageCheck ? app.getPath('userData') : project, '.agent/desktop-demo'); await mkdir(folder, { recursive: true });
+      const folder = resolve(app.isPackaged ? app.getPath('userData') : project, '.agent/desktop-demo'); await mkdir(folder, { recursive: true });
       const fixture = await mkdtemp(resolve(folder, 'project-')); await writeFile(resolve(fixture, 'hello.txt'), 'Hello, world!\r\n');
       if (liveSmoke) {
         await writeFile(resolve(fixture, 'package.json'), JSON.stringify({ private: true, type: 'module', scripts: { test: 'node --test greeting.test.mjs' } }, null, 2));

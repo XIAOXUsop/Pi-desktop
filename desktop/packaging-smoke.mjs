@@ -33,7 +33,18 @@ export async function runPackagingSmoke({window,actions,settings,project}){
   await actions.setMode({mode:'plan'});assert(!(await actions.state()).agent.tools.includes('edit'));await actions.setMode({mode:'build'});
   checks.push('packaged workflow mode and restored write permissions');
   const extension=resolve(settings.folder,'package-check-extension.mjs'),runtimeResult=resolve(settings.folder,'runtime-result.json');
-  await writeFile(extension,`import {writeFile} from 'node:fs/promises';export default function(pi){pi.registerCommand('package-runtime',{handler:async(args,ctx)=>{const r=await pi.exec('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command','node --version; npm --version']);await writeFile(${JSON.stringify(runtimeResult)},JSON.stringify(r));if(r.code!==0)throw new Error('runtime command failed');ctx.ui.notify('PACKAGED_RUNTIME '+r.stdout.trim());}});}`);
+  await writeFile(extension,`import {writeFile} from 'node:fs/promises';
+import {SessionManager} from '@earendil-works/pi-coding-agent';
+export default function(pi){pi.registerCommand('package-runtime',{handler:async(args,ctx)=>{
+  let result;
+  try {
+    if(SessionManager.inMemory(ctx.cwd).getHeader().cwd!==ctx.cwd)throw new Error('Public Pi SDK session API failed');
+    result=await pi.exec('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command','node --version; npm --version']);
+  } catch(error){result={code:-1,error:error.message};}
+  await writeFile(${JSON.stringify(runtimeResult)},JSON.stringify(result));
+  if(result.code!==0)throw new Error(result.error || 'runtime command failed');
+  ctx.ui.notify('PACKAGED_RUNTIME '+result.stdout.trim());
+}});}`);
   await actions.addResource({source:extension,scope:'global'});
   const installed=(await actions.listResources()).items.find(item=>item.path===extension);assert(installed);
   await actions.toggleResource({id:installed.id,enabled:true});
@@ -42,7 +53,7 @@ export async function runPackagingSmoke({window,actions,settings,project}){
   const runtimeResponse=JSON.parse(await readFile(runtimeResult,'utf8'));assert.equal(runtimeResponse.code,0,JSON.stringify(runtimeResponse));
   const commandResult=runtimeResponse.stdout;
   assert(commandResult.includes(manifest.node));assert(commandResult.includes(manifest.npm));
-  checks.push('local extension loads through Pi and executes bundled node and npm');
+  checks.push('local extension imports the public Pi SDK and executes bundled node and npm');
   await actions.addPreset({presetId:'openrouter',key:'package-fixture-key',persist:true});
   const saved=await readFile(resolve(settings.folder,'keys.json'),'utf8');assert(!saved.includes('package-fixture-key'));assert((await actions.state()).keyStatus.openrouter);
   await actions.setModel({key:'demo/offline'});

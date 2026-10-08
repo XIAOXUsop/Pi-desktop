@@ -1,5 +1,5 @@
 import {readFile,writeFile,mkdir,mkdtemp,readdir,realpath} from 'node:fs/promises';
-import {resolve,dirname,basename} from 'node:path';
+import {resolve,dirname,basename,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
@@ -44,7 +44,9 @@ if(!empty){
 }
 await writeFile(resolve(profile,'settings.json'),JSON.stringify(data));
 try{await writeFile(resolve(profile,'models.json'),await readFile(resolve(source,'models.json')));}catch(error){if(error.code!=='ENOENT')throw error;}
-const binary=development?createRequire(import.meta.url)('electron'):resolve(root,'release/win-unpacked/Pi-desktop.exe');
+const candidate=process.argv.find(arg=>arg.startsWith('--executable='))?.slice('--executable='.length);
+if(candidate && (!isAbsolute(candidate) || development))throw new Error('A candidate must be an absolute packaged executable path');
+const binary=candidate || (development?createRequire(import.meta.url)('electron'):resolve(root,'release/win-unpacked/Pi-desktop.exe'));
 const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
 for(const name of Object.keys(env))if(/API_?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name))delete env[name];
 const samples=[];
@@ -60,6 +62,7 @@ for(let iteration=0;iteration<runs;iteration++){
   const result=JSON.parse(await readFile(resolve(profile,'startup-result.json'),'utf8'));
   const stage=name=>result.stages.find(item=>item.stage===name)?.milliseconds;
   assert(stage('window-created')<stage('settings-ready'),'Window creation must not wait for environment keys');
+  if(stage('pi-core-ready')!==undefined)assert(stage('window-created')<stage('pi-core-ready'),'Pi core loading must happen after window creation');
   assert.equal(result.ui.locked,false,'Controls unlock when the conversation is ready');
   assert.equal(result.ui.busy,'false');assert.equal(result.ui.error,false,'Startup must restore without UI errors');
   if(!result.earlyUI.backendReady){assert(result.earlyUI.locked,'Controls stay locked during restoration');assert.equal(result.earlyUI.busy,'true');}
@@ -67,5 +70,5 @@ for(let iteration=0;iteration<runs;iteration++){
   if(empty||missingProject)assert.equal(result.restoredSession,false);
   const sample={iteration:iteration+1,wallMilliseconds:Math.round(performance.now()-started),...result};samples.push(sample);console.log(JSON.stringify(sample));
 }
-await writeFile(resolve(folder,'results.json'),JSON.stringify({development,empty,missingProject,journals,journalBytes,samples},null,2));
+await writeFile(resolve(folder,'results.json'),JSON.stringify({executable:binary,development,empty,missingProject,journals,journalBytes,samples},null,2));
 console.log(JSON.stringify({results:resolve(folder,'results.json'),journals,journalBytes}));

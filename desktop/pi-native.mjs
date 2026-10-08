@@ -1,6 +1,7 @@
 // The package's terminal modules are not public subpath exports. Resolve them from
 // the fixed SDK version so the desktop uses the same command catalogue and helpers.
-export const piModule = path => import(new URL(path, import.meta.resolve('@earendil-works/pi-coding-agent')));
+import {piModule} from './pi-core.mjs';
+export {piModule} from './pi-core.mjs';
 export const {BUILTIN_SLASH_COMMANDS} = await piModule('core/slash-commands.js');
 export const {serializeSessionBranch} = await piModule('core/session-export.js');
 export const commandDescriptions = {

@@ -1,4 +1,4 @@
-import {SessionManager} from '@earendil-works/pi-coding-agent';
+import {SessionManager} from './pi-core.mjs';
 import {SessionStore} from '../dist/src/index.js';
 import {atomicJson} from './settings.mjs';
 import {resolve} from 'node:path';

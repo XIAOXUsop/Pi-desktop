@@ -2,7 +2,7 @@ import {readFile,mkdir,mkdtemp} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {ProjectTrustStore} from '@earendil-works/pi-coding-agent';
+import {ProjectTrustStore} from './pi-core.mjs';
 import {completePiPrompt} from './pi-completion.mjs';
 import {piModule} from './pi-native.mjs';
 import {parsePiImport} from './session-transfer.mjs';

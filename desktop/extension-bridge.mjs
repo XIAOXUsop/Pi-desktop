@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {createEventBus} from '@earendil-works/pi-coding-agent';
+import {createEventBus} from './pi-core.mjs';
 
 /** Desktop implementation of Pi's portable extension UI contract. */
 export class ExtensionBridge {
