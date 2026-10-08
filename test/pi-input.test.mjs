@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PiDesktopAgent} from '../desktop/pi-agent.mjs';
@@ -63,7 +63,7 @@ test('Pi JSONL exports and imports preserve compaction and reject malformed node
   try {
     await agent.run('read and edit');const first=agent.manager.getBranch().find(e=>e.type==='message');agent.manager.appendCompaction('Summary retained',first.id,1000);
     const path=join(root,'native.jsonl');await agent.exportJsonl(path);const jsonl=await readFile(path,'utf8'),imported=parsePiImport(jsonl,root);assert(imported.getEntries().some(e=>e.type==='compaction' && e.summary==='Summary retained'));
-    const copy=await agent.copySession({jsonl}),restored=await PiDesktopAgent.create({...options,resume:copy.path},new DemoProvider());try{assert(restored.manager.getEntries().some(e=>e.type==='compaction'));assert.equal(restored.store.workspace,root);}finally{await restored.close();}
+    const copy=await agent.copySession({jsonl}),restored=await PiDesktopAgent.create({...options,resume:copy.path},new DemoProvider());try{assert(restored.manager.getEntries().some(e=>e.type==='compaction'));assert.equal(restored.store.workspace,await realpath(root));}finally{await restored.close();}
     assert.throws(()=>parsePiImport('{"type":"header","version":1}\n',root),/官方 Pi/);
     assert.throws(()=>parsePiImport(JSON.stringify({type:'session',version:3,cwd:root})+'\n'+JSON.stringify({type:'custom',id:'a',parentId:'a'})+'\n',root),/分支关系/);
   } finally {await agent.close();}

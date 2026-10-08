@@ -33,7 +33,13 @@ export async function grade(task,root,folder,{python='python',protectedHashes={}
     if(task.language==='javascript')result=await exec(process.execPath,['test/acceptance.mjs'],options);
     else if(task.language==='python')result=await exec(python,['test/acceptance.py'],options);
     else if(task.language==='java'){await exec('javac',['-d','out','src/Task.java','test/Verify.java'],options);result=await exec('java',['-cp','out','Verify'],options);}
-    else {result=await exec('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-File','src/read.ps1','-Path','资料 空格/[样例].txt'],{...options,encoding:'buffer'});const values=[result.stdout.toString('utf8').trim(),new TextDecoder('gbk').decode(result.stdout).trim()];assert(values.includes('中文 fixture'),'Unexpected literal-path result: '+JSON.stringify(values));}
+    else {
+      // Capture Unicode consistently even on an English Windows runner. The
+      // submitted script still owns literal-path handling and file decoding.
+      const capture="[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding; & './src/read.ps1' -Path '资料 空格/[样例].txt'; if (-not $?) { exit 1 }";
+      result=await exec('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',Buffer.from(capture,'utf16le').toString('base64')],{...options,encoding:'buffer'});
+      const value=new TextDecoder('utf-8',{fatal:true}).decode(result.stdout).trim();assert.equal(value,'中文 fixture','Unexpected literal-path result');
+    }
     return {passed:true,protectedFilesUnchanged:true};
   }catch(error){return {passed:false,reason:error.message.slice(0,2000),category:/Protected|Unexpected|Linked/.test(error.message)?'invalid_submission':'acceptance_failed'};}
 }
