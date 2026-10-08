@@ -34,14 +34,18 @@ export class Workspace {
     return path;
   }
   async write(input: string, text: string, signal: AbortSignal): Promise<void> {
+    return this.writeBytes(input,Buffer.from(text,'utf8'),signal);
+  }
+  async writeBytes(input:string, bytes:Uint8Array, signal:AbortSignal, restoredMode?:number):Promise<void> {
     const path = await this.path(input, true); signal.throwIfAborted();
     let mode = 0o644;
     try { const stat = await lstat(path); if (!stat.isFile()) throw new Error('Target is not a regular file'); if (stat.nlink > 1) throw new Error('Hard-linked files are not writable'); mode = stat.mode & 0o777; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if(restoredMode!==undefined)mode=restoredMode&0o777;
     const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
     try {
       const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, mode);
-      try { await handle.writeFile(text, { encoding: 'utf8', signal }); await handle.sync(); } finally { await handle.close(); }
+      try { await handle.writeFile(bytes, {signal}); await handle.sync(); } finally { await handle.close(); }
       signal.throwIfAborted(); await this.path(path); await rename(temporary, path);
     } finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
   }

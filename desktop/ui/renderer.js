@@ -10,6 +10,8 @@ import { setupPiCommands } from './pi-commands.js';
 import {setupPromptCompletion} from './prompt-completion.js';
 import {assistantPresentation} from './assistant-presentation.js';
 import {setupExtensionUI} from './extension-ui.js';
+import {setupRecovery} from './recovery-ui.js';
+import {setupRollback} from './rollback-ui.js';
 
 hydrateIcons();
 
@@ -67,6 +69,8 @@ const piCommands=setupPiCommands({api,$,node,getState:()=>state,isBusy:()=>runni
 });
 const promptCompletion=setupPromptCompletion({api,input:$('prompt'),popup:$('prompt-completion'),list:$('prompt-options'),help:$('prompt-completion-help'),getIdentity:()=>viewKey(),onChange:()=>{saveDraft();resizePrompt();}});
 const workflowUI=setupExtensionUI({api,node,guard,refresh,getState:()=>state,isBusy:()=>running || transitioning,onMode:mode=>{if(state){state.mode=mode;$('mode-select').value=mode;$('allow-write').checked=mode==='build' && state.permissions.write;$('allow-shell').checked=mode==='build' && state.permissions.shell;$('mode-hint').textContent=mode==='plan'?'只读，不运行命令':state.permissions.shell?'命令可能修改文件':state.permissions.write?'允许修改文件':'当前只读';for(const id of ['allow-write','allow-shell'])$(id).disabled=running || transitioning || mode==='plan';}},setDraft:text=>{$('prompt').value=text;saveDraft();resizePrompt();}});
+const recoveryUI=setupRecovery({api,node,getState:()=>state,guard,refresh,loadHistory,reviewChanges:()=>document.getElementById('review-changes').click()});
+const rollbackUI=setupRollback({api,node,getState:()=>state,guard,refresh,loadHistory});
 function resizePrompt() {$('prompt').style.height='auto';$('prompt').style.height=`${Math.min(180,$('prompt').scrollHeight)}px`;}
 function openResources() { return resourceUI.open(); }
 function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4500); }
@@ -92,7 +96,7 @@ function setBusy(value, result = state?.lastResult) {
   for (const button of document.querySelectorAll('#resource-form button, #resource-detail button, #reload-resources')) button.disabled = value || transitioning;
   for (const button of document.querySelectorAll('.message-branch,.message-edit,.task-editor button[type=submit]')) button.disabled = value || transitioning;
   const goal=state?.agent?.extensionUI?.cards?.find(card=>card.id==='goal' && card.status!=='idle');
-  const status = manualCompacting ? '正在整理上下文' : transitioning ? '正在切换' : value ? goal?.status==='checking'?'正在核对验收':'正在处理' : result?.status === 'cancelled' ? '已停止，可继续' : result?.status === 'failed' ? '任务遇到问题' : goal ? `目标${goal.statusText}` : result?.status === 'limit' ? '输出未完成，可继续' : result?.status === 'completed' ? '任务完成' : '就绪';
+  const status = manualCompacting ? '正在整理上下文' : transitioning ? '正在切换' : value ? goal?.status==='checking'?'正在核对验收':'正在处理' : result?.status === 'interrupted' ? '任务已中断，可检查后继续' : result?.status === 'cancelled' ? '已停止，可继续' : result?.status === 'failed' ? '任务遇到问题' : goal ? `目标${goal.statusText}` : result?.status === 'limit' ? '输出未完成，可继续' : result?.status === 'completed' ? '任务完成' : '就绪';
   $('run-status').replaceChildren(node('i', `status-dot ${value ? 'busy' : result?.status === 'failed' ? 'failed' : ''}`), document.createTextNode(status));
   workflowUI.update();
 }
@@ -109,6 +113,7 @@ function applyState(next) {
   const previous = viewKey(); if (previous && previous !== viewKey(next)) saveDraft();
   projectNavigation.remember(state);
   state = next; $('project-name').textContent = next.projectName || '未选择项目'; $('project-path').textContent = next.project || '打开项目后开始工作';
+  if(next.restoreError){$('operation-error').textContent=next.restoreError;$('operation-error').hidden=false;}
   workflowUI.update();
   $('project-name').title = next.projectName || ''; $('project-path').title = next.project || '';
   $('session-title').textContent = next.sessions.find(session => session.active)?.title || (next.agent ? '新会话' : '尚未开始');
@@ -133,7 +138,7 @@ function applyState(next) {
   replaceSelectOptions('limits-model', next.models.filter(m => m.key !== 'demo/offline').map(m => {const option = node('option','',m.key);option.value = m.key;return option;}));
   $('limits-model').value = next.models.some(m => m.key === selectedLimits) ? selectedLimits : next.selectedModel === 'demo/offline' ? next.models[0].key : next.selectedModel;
   renderModelLimits();
-  applyPreferences(); setBusy(next.agent?.busy ?? false, next.lastResult);
+  applyPreferences(); setBusy(next.agent?.busy ?? false, next.lastResult);recoveryUI.update();rollbackUI.changed();
   if (previous !== viewKey()) { promptCompletion.close();restoreDraft(); directory = ''; pickerDirectory = ''; preview = null; files=[]; renderFiles(); $('file-preview').hidden = true; }
   const queued = next.agent?.queued; $('queue-status').textContent = queued?.steering.length || queued?.followUp.length ? `待加入的插话 ${queued.steering.length} · 追加任务 ${queued.followUp.length}` : '';
 }
@@ -356,7 +361,7 @@ async function loadHistory() {
     else { const call = calls.get(value.callId); if (call) toolEnd(call, value); }
   }
   execution.historyEnd();for(const item of toolCards.values()) if(item.executionItem.status === 'interrupted') item.status.textContent = '已中断';
-  if (!$('messages').children.length) welcome(); scroll(true);
+  if (!$('messages').children.length) welcome();await recoveryUI.loadPartial();scroll(true);
 }
 async function refresh() { const sequence = ++refreshing; const next = await api.state(); if (sequence === refreshing && !transitioning) applyState(next); }
 function renderChips() { $('context-chips').replaceChildren(...attached.map(path => { const chip = node('div', 'context-chip'); chip.title = path; chip.append(icon('file'), node('span', '', path)); const remove = node('button'); remove.append(icon('close')); remove.setAttribute('aria-label', `移除 ${path}`); remove.onclick = () => { attached = attached.filter(item => item !== path); renderChips(); saveDraft(); }; chip.append(remove); return chip; })); }
@@ -369,11 +374,12 @@ async function loadPicker(path = '') { const owner = viewKey(); const listing = 
 function renderPicker() { const query = $('picker-search').value.toLowerCase(); $('picker-results').replaceChildren(...pickerFiles.filter(file => file.name.toLowerCase().includes(query)).map(file => fileRow(file, () => guard(async () => { if (file.directory) await loadPicker(file.path); else { await api.readFile({ path: file.path }); attach(file.path); $('files-dialog').close(); } })))); if (!$('picker-results').children.length) $('picker-results').append(node('div', 'panel-empty', query ? '没有匹配的文件，试试其他关键词。' : '此目录没有可添加的文件。')); }
 function openPicker() { if (!state.project || transitioning) return; $('files-error').hidden = true; $('files-dialog').showModal(); void guard(() => loadPicker('')); $('picker-search').focus(); }
 function parent(path) { return path.split('/').slice(0, -1).join('/'); }
-function selectPanel(panel) { for (const name of ['files', 'changes', 'tools']) { const selected = name === panel; $(`${name}-tab`).classList.toggle('active', selected); $(`${name}-tab`).setAttribute('aria-selected', String(selected)); $(`${name}-tab`).tabIndex = selected ? 0 : -1; $(`${name}-panel`).hidden = !selected; } if (panel === 'files') { if (state.project) void guard(() => loadFiles(directory)); else renderFiles(); } }
+function selectPanel(panel) { for (const name of ['files', 'changes', 'tools']) { const selected = name === panel; $(`${name}-tab`).classList.toggle('active', selected); $(`${name}-tab`).setAttribute('aria-selected', String(selected)); $(`${name}-tab`).tabIndex = selected ? 0 : -1; $(`${name}-panel`).hidden = !selected; } if(panel==='changes')void guard(rollbackUI.reload); if (panel === 'files') { if (state.project) void guard(() => loadFiles(directory)); else renderFiles(); } }
 $('review-changes').onclick = () => guard(async () => { await preference({panelVisible:true}); selectPanel('changes'); $('changes-tab').focus(); });
 api.onNotification(notification => {
-  if (notification.type === 'worker_stopped') { finishExecution('failed');setBusy(false, { status: 'failed' }); toast('执行进程已退出，请重新打开会话'); return; }
-  if (notification.type !== 'event' || notification.event.sessionId !== state?.agent?.sessionId) return; const event = notification.event;
+  if(notification.type==='worker_ready'){if(notification.sessionId===state?.agent?.sessionId&&notification.workspace===state?.project)state.agent.workerGeneration=notification.generation;return;}
+  if (notification.type === 'worker_stopped') {finishExecution('interrupted');setBusy(false,{status:'interrupted'});void guard(async()=>{await api.getRecoveryState();await refresh();await loadHistory();});return;}
+  if (notification.type !== 'event' || notification.event.sessionId !== state?.agent?.sessionId) return; const event = notification.event;if(event.workerGeneration&&state.agent.workerGeneration&&event.workerGeneration!==state.agent.workerGeneration)return;
   if(event.type==='extension_state'){state.agent.extensionUI=event.extensionUI;}
   if(workflowUI.event(event)){if(event.type==='extension_state')setBusy(event.busy ?? running);return;}
   switch (event.type) {
@@ -432,7 +438,7 @@ api.onNotification(notification => {
     case 'compaction_start': $('run-status').textContent = '正在整理上下文'; break;
     case 'compaction_end': if(event.error) toast(event.error);else $('run-status').textContent = event.willRetry ? '上下文已整理，正在继续' : '正在处理';break;
     case 'retry_start': $('run-status').textContent = '服务响应中断，正在重试';break;
-    case 'run_end': finishExecution(event.result.status,event.messageId,event.entryId);setBusy(false, event.result); renderSessions(); if (event.result.error && event.result.status !== 'cancelled') reportError(new Error(event.result.error)); void guard(refresh); break;
+    case 'run_end': void guard(rollbackUI.reload);finishExecution(event.result.status,event.messageId,event.entryId);setBusy(false, event.result); renderSessions(); if (event.result.error && event.result.status !== 'cancelled') reportError(new Error(event.result.error)); void guard(refresh); break;
   }
 });
 function finishExecution(status,messageId,entryId) {
@@ -476,6 +482,7 @@ function commandOptions() {
     { title: '添加项目文件', shortcut: 'Ctrl P', action: openPicker, disabled: !state.project },
     { title: '切换到规划模式', action: () => switchView(() => api.setMode({ mode: 'plan' })), disabled: running },
     { title: '切换到执行模式', action: () => switchView(() => api.setMode({ mode: 'build' })), disabled: running },
+    { title:'导出诊断',action:recoveryUI.openDiagnostics },
     { title: '查看文件改动', action: () => { void guard(() => preference({ panelVisible: true })); selectPanel('changes'); } },
     { title: '模型与密钥设置', alias:'/settings', action: () => openSettings('preset') },
     { title: '扩展与技能', action: () => openResources() },

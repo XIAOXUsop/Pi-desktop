@@ -4,7 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { savedSessionModel } from './project-sessions.mjs';
 
 class DesktopDemoProvider extends DemoProvider {
+  constructor(fixtures=false){super();this.fixtures=fixtures;}
   async *stream(request) {
+    if(this.fixtures&&request.messages.some(m=>m.role==='user'&&m.text.includes('[command-supervisor-check]'))&&!request.messages.some(m=>m.role==='tool'&&m.name==='shell')) {
+      yield {type:'done',message:{role:'assistant',text:'',toolCalls:[{id:'reliability-command',name:'shell',arguments:JSON.stringify({command:'Start-Sleep -Seconds 30',timeoutMs:60000})}],provider:this.id,model:request.model.id,stopReason:'tool_use',usage:{input:0,output:0},timestamp:Date.now()}};return;
+    }
     await delay(500, undefined, { signal: request.signal });
     const turns = request.messages.filter(message => message.role === 'assistant').length;
     // Public sample content for the explicitly labelled offline demonstration only.
@@ -36,6 +40,13 @@ class DesktopDemoProvider extends DemoProvider {
 
 let agent; let opening = false; let unsubscribe;
 const send = value => process.parentPort.postMessage(value);
+let hostSequence=0;const hostPending=new Map();
+function hostCall(method,params,update) {
+  const id=++hostSequence;return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{hostPending.delete(id);reject(new Error('执行进程响应超时'));},method==='command_execute'?180000:60000);
+    hostPending.set(id,{resolve,reject,timer,update});send({type:'host_request',id,method,params});
+  });
+}
 function publicEvent(event) {
   if (event.type === 'message' && event.message.role === 'assistant') { const { providerState, ...message } = event.message; return { ...event, message }; }
   return event;
@@ -45,7 +56,7 @@ async function open(options) {
   try {
     await release();process.chdir(options.workspace);
     if(options.restoreModel && options.resume) {const key=await savedSessionModel(options.resume,options.config);if(key) options={...options,modelKey:key};}
-    agent = await PiDesktopAgent.create(options, new DesktopDemoProvider());
+    agent = await PiDesktopAgent.create({...options,hostCall}, new DesktopDemoProvider(options.reliabilityFixtures));
     unsubscribe=agent.subscribe(event => send({ type: 'event', event: publicEvent(event) }));
     return { ...agent.state, sessionPath: agent.store.path };
   }
@@ -65,6 +76,8 @@ function history() {
 }
 process.parentPort.on('message', async event => {
   const command = event.data; const id = command.id;
+  if(command.type==='host_response') {const pending=hostPending.get(id);if(pending){clearTimeout(pending.timer);hostPending.delete(id);command.error?pending.reject(new Error(command.error)):pending.resolve(command.result);}return;}
+  if(command.type==='host_update'){hostPending.get(id)?.update?.(command.update);return;}
   try {
     if (command.method === 'open') { send({ type: 'response', id, result: await open(command.params) }); return; }
     if(command.method==='release' || command.method==='close') {await release();send({type:'response',id,result:{closed:true}});return;}
@@ -97,6 +110,13 @@ process.parentPort.on('message', async event => {
       case 'copy_session': result=await agent.copySession(params);break;
       case 'export_jsonl': result=await agent.exportJsonl(params.path);break;
       case 'bug_bundle': result=await agent.bugBundle(params);break;
+      case 'runs': result=await agent.runRecords();break;
+      case 'branch_ids': result=agent.store.branch().map(e=>e.id);break;
+      case 'rollback_notice': await agent.session.sendCustomMessage({customType:'desktop-rollback',content:'文件已恢复：'+params.files.join('、')+'。下一次任务将读取当前文件继续。',display:true},{triggerTurn:false});await agent.pending;await agent.save();result={saved:true};break;
+      case 'recover': {
+        const owner=agent;void owner.recoverRun(params).catch(error=>send({type:'event',event:{type:'extension_notice',sessionId:owner.store.id,level:'error',message:error.message}}));result={accepted:true};break;
+      }
+      case 'recovery': agent.restoredRuns=await agent.runRecords();result=agent.recovery;if(result)result.partial=await hostCall('run_partial_get',{runId:result.run.runId,sessionId:agent.store.id,workspace:agent.workspace.root});break;
       case 'compact': result = await agent.compact(params.instructions); break;
       case 'export_html': result = await agent.exportHtml(params.path);break;
       case 'history': result = history(); break;

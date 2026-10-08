@@ -10,7 +10,8 @@ const MAX_FILE = 4 * 1024 * 1024;
 async function read(workspace: Workspace, input: string): Promise<string> {
   const target = await workspace.path(input); const info = await stat(target);
   if (!info.isFile() || info.size > MAX_FILE) throw new Error('File must be a regular text file no larger than 4 MiB');
-  const content = await readFile(target, 'utf8'); if (content.includes('\0')) throw new Error('Binary files are not supported'); return content;
+  const bytes=await readFile(target);new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  const content = bytes.toString('utf8'); if (content.includes('\0')) throw new Error('Binary files are not supported'); return content;
 }
 export function fileTools(workspace: Workspace): Tool[] {
   return [

@@ -1,0 +1,13 @@
+.recovery-card{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:10px;border:1px solid var(--line);border-radius:var(--control-radius);background:var(--surface);color:var(--muted)}
+.recovery-card[hidden]{display:none}
+.recovery-card>span{flex:1;min-width:120px}
+.reliability-dialog{width:min(660px,90vw);max-height:80vh;overflow:auto;padding:24px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:var(--dialog-radius);box-shadow:var(--dialog-shadow)}
+.reliability-dialog::backdrop{background:var(--backdrop)}
+.reliability-dialog h2{margin:0 0 12px;font-size:19px}
+.reliability-dialog p{color:var(--muted);line-height:1.7}
+.diagnostic-preview,.recovered-output pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;font:12px/1.6 var(--mono-font);background:var(--surface);padding:12px;border-radius:var(--control-radius)}
+.recovered-output{margin:12px 0;color:var(--muted);border:1px solid var(--line);border-radius:var(--control-radius);padding:12px}
+.rollback-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.rollback-toolbar small{color:var(--muted)}
+.rollback-file{display:flex;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.rollback-file input{flex:none}

@@ -26,3 +26,5 @@ const top=[...new Set(normalized.map(path=>path.split('/')[0]))];
 for(const forbidden of ['.agent','.git','.env','.npmrc','research','test','scripts','configs/keys.json','configs/auth.json'])assert(!normalized.some(path=>path===forbidden || path.startsWith(forbidden+'/')),'Personal and development files excluded: '+forbidden);
 await writeFile(resolve(folder,'latest.json'),JSON.stringify({...report,profile,bundleTopLevel:top,systemNodeRemovedFromPath:true},null,2));
 console.log(JSON.stringify({executable,checks:report.checks.length,errors:report.errors,profile,systemNodeRemovedFromPath:true}));
+const reliability=spawn(process.execPath,[resolve(root,'scripts/verify-reliability.mjs'),executable],{cwd:root,env,windowsHide:true,stdio:'inherit'});
+const reliabilityCode=await new Promise((accept,reject)=>{reliability.once('error',reject);reliability.once('close',accept);});assert.equal(reliabilityCode,0,'Packaged recovery, rollback and command cleanup');

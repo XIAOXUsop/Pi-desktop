@@ -1,23 +1,27 @@
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import type { Tool } from '../types.js';
+import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { bounded } from '../util.js';
 
 /** Shell commands run with the user's OS permissions; workspace cwd is not a sandbox. */
-export function shellTool(): Tool {
+export type ShellExecutor = (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>;
+export function shellTool(executor?: ShellExecutor, onSpawn?: (pid: number | undefined) => void): Tool {
   return {
     name: 'shell', kind: 'execute', description: 'Run a command in the project directory using PowerShell on Windows or /bin/sh on Unix. Bounded output and timeout; no background jobs.',
     parameters: { type: 'object', properties: { command: { type: 'string', minLength: 1, maxLength: 100_000 },
       timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } }, required: ['command'], additionalProperties: false },
     async execute(args, context) {
+      if(executor)return executor(args,context);
       context.signal.throwIfAborted(); const command = args.command as string;
       const started = Date.now();
       const timeoutMs = (args.timeoutMs as number | undefined) ?? 30_000;
       const executable = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
-      const parameters = process.platform === 'win32' ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command] : ['-c', command];
+      const windowsCommand="$ProgressPreference = 'SilentlyContinue'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding;\n"+command;
+      const parameters = process.platform === 'win32' ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', windowsCommand] : ['-c', command];
       return await new Promise((resolve, reject) => {
         const child = spawn(executable, parameters, { cwd: context.workspace, windowsHide: true,
           detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+        onSpawn?.(child.pid);
         let output = ''; let bytes = 0, truncated = false; let killed: 'cancelled' | 'timeout' | undefined;
         const stdout = new StringDecoder('utf8'), stderr = new StringDecoder('utf8');
         const append = (piece: string) => { if(piece) { output += piece; context.update(piece); } };

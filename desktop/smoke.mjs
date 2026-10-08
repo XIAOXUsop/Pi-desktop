@@ -82,7 +82,7 @@ export async function runSmoke({ window, actions, settings, project }) {
   assert.equal(first.agent.engine,'pi');
   assert(await js("document.body.classList.contains('panel-hidden') && document.getElementById('panel-toggle').getAttribute('aria-expanded') === 'false' && document.getElementById('review-entry').hidden"),'fresh reading layout hides empty review pane and action');
   await snapshot('desktop-reading-welcome.png');
-  assert(await js("CSS.supports('appearance','base-select') && document.querySelectorAll('select').length===9 && Array.from(document.querySelectorAll('select')).every(select=>getComputedStyle(select).appearance==='base-select' && parseFloat(getComputedStyle(select).borderRadius)>=8 && parseFloat(getComputedStyle(select,'::picker(select)').borderRadius)>=12)"),'audit all nine dropdown triggers and popup radii');
+  assert(await js("CSS.supports('appearance','base-select') && document.querySelectorAll('select').length===10 && Array.from(document.querySelectorAll('select')).every(select=>getComputedStyle(select).appearance==='base-select' && parseFloat(getComputedStyle(select).borderRadius)>=8 && parseFloat(getComputedStyle(select,'::picker(select)').borderRadius)>=12)"),'audit all ten dropdown triggers and popup radii including task checkpoints');
   await nativeDropdown('#mode-select','desktop-dropdown-mode.png',{keyboard:true});
   await nativeDropdown('#model-select','desktop-dropdown-model.png');
   await js("document.getElementById('panel-toggle').click()");

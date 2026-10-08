@@ -1,6 +1,6 @@
 import { startup } from './startup.mjs';
 import { app, BrowserWindow, ipcMain, dialog, protocol, safeStorage, utilityProcess, clipboard, shell } from 'electron';
-import { readFile, mkdir, readdir, stat, realpath, writeFile, mkdtemp } from 'node:fs/promises';
+import { readFile, mkdir, readdir, stat, lstat, realpath, writeFile, mkdtemp } from 'node:fs/promises';
 import { resolve, dirname, basename, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SettingsStore } from './settings.mjs';
@@ -10,24 +10,57 @@ import { deleteSessionFiles } from './session-files.mjs';
 import { listProjectSessions, selectProjectSession } from './project-sessions.mjs';
 import { providerPresets, providerName, officialModelLimits } from './provider-presets.mjs';
 import { ResourceMarket } from './resource-market.mjs';
+import {randomUUID} from 'node:crypto';
+import {Diagnostics,redact} from './diagnostics.mjs';
 const resourceMarket = new ResourceMarket();
 let piBuiltinCommands=[];
 startup.mark('imports-ready');
 
 const directory = dirname(fileURLToPath(import.meta.url)); const project = resolve(directory, '..');
+const reliabilitySmoke=process.argv.includes('--reliability-smoke');
 const liveSmoke = process.argv.includes('--live-smoke');
 const navigationBenchmark = process.argv.includes('--navigation-benchmark');
 const packageCheck = process.argv.includes('--package-check');
 const startupBenchmark = process.argv.includes('--startup-benchmark');
-const demo = packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke') || process.argv.includes('--demo');
-const smoke = startupBenchmark || packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke');
+const demo = reliabilitySmoke || packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke') || process.argv.includes('--demo');
+const smoke = reliabilitySmoke || startupBenchmark || packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke');
 const ENTRY = 'local-agent://app/index.html';
 protocol.registerSchemesAsPrivileged([{ scheme: 'local-agent', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
-if(packageCheck || startupBenchmark){const folder=process.argv[process.argv.indexOf('--test-profile')+1];if(!folder||!isAbsolute(folder))throw new Error('Verification requires an absolute test profile');app.setPath('userData',folder);}
+if(reliabilitySmoke || packageCheck || startupBenchmark){const folder=process.argv[process.argv.indexOf('--test-profile')+1];if(!folder||!isAbsolute(folder))throw new Error('Verification requires an absolute test profile');app.setPath('userData',folder);}
 else if (!app.isPackaged) app.setPath('userData', resolve(project, '.agent', smoke ? `desktop-smoke-profile/run-${Date.now()}` : 'desktop-profile'));
 else app.setPath('userData',resolve(app.getPath('appData'),'Pi-desktop'));
 if(!smoke){if(!app.requestSingleInstanceLock())app.quit();app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});}
 let window; let settings; let resources; let worker; let workerOpening; let current; let lastResult; let changing = false; let shuttingDown = false; let initialization;
+let diagnostics;let coordinator;let coordinatorOpening;let workerContext;let commandSupervisor;
+let recoveringWorker;
+let restoreError;
+let restoreFailure;
+async function ensureRecoveryWorker() {
+  if(recoveringWorker)return recoveringWorker;
+  if(worker)return;
+  const selected=current;
+  recoveringWorker=exclusive(()=>openProject(selected.workspace,selected.sessionPath,{force:true})).finally(()=>{recoveringWorker=undefined;});
+  return recoveringWorker;
+}
+async function hostRequest(client, method, params, update) {
+  if(worker!==client||!workerContext||params.workspace!==workerContext.workspace)throw new Error('执行进程或项目已切换');
+  if(!coordinator||coordinator.store.sessionId!==params.sessionId) {
+    coordinatorOpening ||= (async()=>{const {RunCoordinator}=await import('./run-coordinator.mjs');const value=await RunCoordinator.open(params.workspace,params.sessionId,client.generation,diagnostics);await value.initialize();return value;})();
+    coordinator=await coordinatorOpening;coordinatorOpening=undefined;
+  }
+  if(worker!==client||coordinator.store.sessionId!==params.sessionId)throw new Error('会话已切换');
+  if(workerContext.sessionId&&params.sessionId!==workerContext.sessionId)throw new Error('会话不匹配');
+  if(method==='command_execute'||method==='command_cancel') {
+    const record=await coordinator.store.get(params.runId);
+    if(record.workerGeneration!==client.generation)throw new Error('命令所属执行进程已失效');
+    if(!commandSupervisor){const {CommandSupervisor}=await import('./command-supervisor.mjs');commandSupervisor=new CommandSupervisor();}
+    if(worker!==client||!workerContext||params.workspace!==workerContext.workspace)throw new Error('执行进程已切换');
+    if(method==='command_cancel')return commandSupervisor.cancel({...params,generation:client.generation});
+    if(coordinator.active!==params.runId||!settings.data.permissions.shell||record.mode==='plan'||record.tools[params.callId]?.name!=='shell')throw new Error('该命令超出当前任务权限');
+    return commandSupervisor.execute({...params,generation:client.generation},update);
+  }
+  return coordinator.handle(method,params);
+}
 const navigationPerformance = {workerStarts:0,switches:[]};
 function tools() { return ['list', 'read', ...(settings.data.permissions.write ? ['write', 'edit'] : []), ...(settings.data.permissions.shell ? ['shell'] : [])]; }
 function modelKey() { return settings.data.selectedModel ?? settings.config.defaultModel; }
@@ -37,10 +70,10 @@ async function state() {
   if (workerOpening) await workerOpening;
   const [agent,sessionList]=await Promise.all([worker ? worker.request('state') : null,sessions()]);
   return { project: current?.workspace ?? null, projectName: current?.workspace ? basename(current.workspace) : null,
-    models: [...settings.config.models.map(model => ({ ...model, key: `${model.provider}/${model.id}`, officialLimits:officialModelLimits(settings.config.providers.find(p => p.id === model.provider),model.id) })), { provider: 'demo', id: 'offline', key: 'demo/offline', tools: true }], attachmentLimits: CONTEXT_FILE_LIMITS,
+    models: [...settings.config.models.map(model => ({ ...model, key: `${model.provider}/${model.id}`, officialLimits:officialModelLimits(settings.config.providers.find(p => p.id === model.provider),model.id) })), { provider: 'demo', id: 'offline', key: 'demo/offline', tools: true }], attachmentLimits: CONTEXT_FILE_LIMITS, checkpointLimits:settings.data.checkpoints,
     piCommands:piBuiltinCommands,scopedModels:settings.data.scopedModels || [],thinkingLevel:settings.data.thinkingLevel || 'off',providers: settings.config.providers.map(provider => ({ id: provider.id, name: providerName(provider), protocol: provider.protocol, baseUrl: provider.baseUrl })), presets: providerPresets(), keyStatus: settings.keyStatus(),
     selectedModel: agent ? `${agent.model.provider}/${agent.model.id}` : modelKey(), permissions: settings.data.permissions, mode: agent?.mode || settings.data.mode, preferences: settings.data.preferences,
-    recentProjects: settings.data.recentProjects, sessions: sessionList, agent, lastResult:lastResult || agent?.lastResult, keyLoadError: settings.keyLoadError,
+    recentProjects: settings.data.recentProjects, sessions: sessionList, agent, lastResult:lastResult || agent?.lastResult, keyLoadError: settings.keyLoadError,restoreError,
     ...(smoke ? {verification:{workerStarts:navigationPerformance.workerStarts,switches:[...navigationPerformance.switches]}} : {}) };
 }
 async function idle() { if (worker && (await worker.request('state'))?.busy) throw new Error('请先停止当前任务，再切换项目、模型设置或权限'); }
@@ -48,7 +81,7 @@ async function exclusive(operation) {
   if (changing) throw new Error('正在切换会话，请稍候'); changing = true;
   try { await idle(); return await operation(); } finally { changing = false; }
 }
-async function stopWorker() { const old = worker; worker = undefined; if (old) await old.close(); }
+async function stopWorker() { const old = worker;if(old){await commandSupervisor?.cancel({generation:old.generation});try{await old.close();}finally{if(worker===old)worker=undefined;await coordinator?.interrupt();}} }
 async function openProject(path, resume, {createNew = false, force = false} = {}) {
   const started = performance.now();
   try { return await openProjectImpl(path,resume,{createNew,force}); }
@@ -62,26 +95,32 @@ async function openProjectImpl(path, resume, {createNew = false, force = false} 
   if (!resume && !createNew) {
     if(worker) await worker.request('release');
     current = {workspace:canonical};
-    await rememberProject(); return state();
+    await rememberProject();restoreError=undefined; return state();
   }
   let client=worker;
   if(!client) {
     const child = utilityProcess.fork(resolve(directory, 'worker.mjs'), [], { cwd: canonical, env: settings.workerEnvironment(), stdio: 'pipe', serviceName: 'Pi-desktop Worker' });
     navigationPerformance.workerStarts++;
-    client = new WorkerClient(child); worker = client;
+    const generation=randomUUID();diagnostics ||= new Diagnostics(resolve(app.getPath('userData'),'logs'),{secrets:Object.values(settings.keys||{})});
+    client = new WorkerClient(child,{generation,diagnostics,hostRequest:(method,params,update)=>hostRequest(client,method,params,update)}); worker = client;
     client.on('notification', message => {
     if (worker !== client) return;
     if (message.type === 'event' && message.event.type === 'run_start') lastResult = null;
     if (message.type === 'event' && message.event.type === 'run_end') lastResult = message.event.result;
     notify(message);
   });
-    client.on('stopped', code => { if (worker === client && !shuttingDown) { worker = undefined; notify({ type: 'worker_stopped', code }); } });
+    client.on('stopped', code => { if (worker === client && !shuttingDown&&!client.closing) {const owner=coordinator;worker=undefined;void(async()=>{await commandSupervisor?.cancel({generation:client.generation});await owner?.interrupt();notify({type:'worker_stopped',code});})().catch(()=>notify({type:'worker_stopped',code}));void diagnostics?.event('worker_exit',{generation:client.generation,exitCode:code});} });
   }
   try {
-    workerOpening = (async () => client.request('open', { workspace: canonical, resume, restoreModel:!!resume && !force, config: settings.config, modelKey: modelKey(), tools: tools(), mode: settings.data.mode, agentDir: resources.folder, thinkingLevel:settings.data.thinkingLevel,scopedModels:settings.data.scopedModels,resources:await resources.runtime(canonical) }))();
+    coordinator=undefined;coordinatorOpening=undefined;workerContext={workspace:canonical};
+    workerOpening = (async () => client.request('open', { workspace: canonical, resume, workerGeneration:client.generation,reliabilityFixtures:reliabilitySmoke||packageCheck, checkpointLimits:settings.data.checkpoints, restoreModel:!!resume && !force, config: settings.config, modelKey: modelKey(), tools: tools(), mode: settings.data.mode, agentDir: resources.folder, thinkingLevel:settings.data.thinkingLevel,scopedModels:settings.data.scopedModels,resources:await resources.runtime(canonical) }))();
     current = await workerOpening; workerOpening = undefined;
+    workerContext.sessionId=current.sessionId;
+    notify({type:'worker_ready',sessionId:current.sessionId,workspace:canonical,generation:client.generation});
+    if(!coordinator){const {RunCoordinator}=await import('./run-coordinator.mjs');coordinator=await RunCoordinator.open(canonical,current.sessionId,client.generation,diagnostics);await coordinator.initialize();}
     if(resume && !force) settings.data.selectedModel=`${current.model.provider}/${current.model.id}`;
     await rememberProject();
+    restoreError=undefined;
     return await state();
   } catch (error) { workerOpening = undefined; await stopWorker(); current = undefined; throw error; }
 }
@@ -95,9 +134,10 @@ async function rememberProject() {
 }
 async function reloadWorker() { if (current?.sessionPath) await openProject(current.workspace, current.sessionPath, {force:true}); else await stopWorker(); }
 let hostModule;
+async function checkpointHost(){const {checkpointActions}=await import('./checkpoint-actions.mjs');return checkpointActions({current:()=>current,worker:()=>worker,coordinator:()=>coordinator,settings,exclusive,reloadWorker,state});}
 async function commandHost() {
   const {piHostActions}=await (hostModule ??= import('./pi-host-actions.mjs'));
-  return piHostActions({settings,resources,worker:()=>worker,current:()=>current,window:()=>window,dialog,app,state,exclusive,openProject,reloadWorker});
+  return piHostActions({settings,resources,worker:()=>worker,current:()=>current,window:()=>window,dialog,app,state,exclusive,openProject,reloadWorker,desktopDiagnostics:()=>actions.exportDiagnostics({preview:true})});
 }
 async function knownProject(path=current?.workspace) {
   if(typeof path!=='string' || !settings.data.recentProjects.includes(path)) throw new Error('请通过打开项目选择文件夹');
@@ -105,6 +145,7 @@ async function knownProject(path=current?.workspace) {
 }
 const actions = {
   state,
+  ...Object.fromEntries(['listCheckpoints','previewRollback','applyRollback','inverseRollback','resumeRollback','pinCheckpoint','setCheckpointLimits'].map(method=>[method,async input=>(await checkpointHost())[method](input)])),
   async startupReady({phase}={}) { if(!['renderer-state','renderer-history','renderer-ready'].includes(phase))throw new Error('Invalid startup stage');startup.mark(phase);return null; },
   async extensionCommand({prompt}) {if(changing || !worker || typeof prompt!=='string' || prompt.length>256*1024)throw new Error('请选择有效扩展指令');return worker.request('command',{prompt});},
   async extensionResponse(input) {if(!worker || changing)throw new Error('会话已切换');return worker.request('extension_response',input);},
@@ -172,7 +213,29 @@ const actions = {
   async run({ prompt, files = [] }) { if (changing || !worker) throw new Error('请先打开项目'); if (typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > 256 * 1024) throw new Error('请输入有效任务（最多 256 KiB）'); const client = worker; const runtime=await client.request('state');if(piBuiltinCommands.some(c=>c.command===prompt.trim().split(/\s/,1)[0]))throw new Error('请通过聊天输入框执行 Pi 内置指令');const extension=runtime.commands.some(c=>c.source==='extension' && c.command===prompt.trim().split(/\s/,1)[0]);const text=extension ? prompt : await (await ProjectFiles.open(current.workspace)).prompt(prompt, files, runtime.model); if (client !== worker || changing) throw new Error('项目已切换，请重新发送'); return client.request('run', { prompt: text }); },
   async steer({ prompt, files = [] }) { if (changing || !worker || typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > 256 * 1024) throw new Error('请输入插话内容'); const client = worker; const runtime=await client.request('state');if(piBuiltinCommands.some(c=>c.command===prompt.trim().split(/\s/,1)[0]))throw new Error('请通过聊天输入框执行 Pi 内置指令');const extension=runtime.commands.some(c=>c.source==='extension' && c.command===prompt.trim().split(/\s/,1)[0]);const text=extension ? prompt : await (await ProjectFiles.open(current.workspace)).prompt(prompt, files, runtime.model); if (client !== worker || changing) throw new Error('项目已切换，请重新发送'); return client.request('steer', { prompt: text }); },
   async followUp({ prompt, files = [] }) { if (changing || !worker || typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > 256 * 1024) throw new Error('请输入后续任务'); const client = worker; const runtime=await client.request('state');if(piBuiltinCommands.some(c=>c.command===prompt.trim().split(/\s/,1)[0]))throw new Error('请通过聊天输入框执行 Pi 内置指令');const extension=runtime.commands.some(c=>c.source==='extension' && c.command===prompt.trim().split(/\s/,1)[0]);const text=extension ? prompt : await (await ProjectFiles.open(current.workspace)).prompt(prompt, files, runtime.model); if (client !== worker || changing) throw new Error('项目已切换，请重新发送'); return client.request('follow_up', { prompt: text }); },
-  async abort() { if (worker) await worker.request('abort', {}, 150000); return state(); },
+  async abort() { if (worker) {await commandSupervisor?.cancel({generation:worker.generation});await worker.request('abort', {}, 150000);}return state(); },
+  async listRuns() {return coordinator?coordinator.store.list():[];},
+  async getRecoveryState() {
+    if(!current?.sessionId)return null;
+    await ensureRecoveryWorker();
+    return worker.request('recovery');
+  },
+  async recoverRun(input) {
+    if(changing||!current?.sessionId||typeof input.runId!=='string'||typeof input.confirmedUncertain!=='boolean')throw new Error('请选择可恢复的任务');
+    await ensureRecoveryWorker();
+    const recovery=await worker.request('recovery');
+    if(recovery?.run.runId!==input.runId)throw new Error('任务或分支已切换');
+    if(recovery.uncertain.length&&!input.confirmedUncertain)throw new Error('请先核实待确认工具和命令');
+    return worker.request('recover',input);
+  },
+  async exportDiagnostics({includeRuntime=false,preview=true}={}) {
+    if(typeof includeRuntime!=='boolean'||typeof preview!=='boolean')throw new Error('无效诊断选项');
+    diagnostics ||= new Diagnostics(resolve(app.getPath('userData'),'logs'),{secrets:Object.values(settings.keys||{})});
+    const bundle=await diagnostics.bundle({version:app.getVersion(),runs:coordinator?(await coordinator.store.list()).map(r=>({runId:r.runId,status:r.status,metrics:r.metrics,error:r.error})):[]},{includeRuntime});
+    if(preview)return bundle;
+    const choice=await dialog.showSaveDialog(window,{title:'保存诊断',defaultPath:'Pi-desktop-diagnostics.json',filters:[{name:'诊断',extensions:['json']}]});
+    if(choice.canceled)return {cancelled:true};await writeFile(choice.filePath,JSON.stringify(bundle,null,2),{mode:0o600});return {saved:true};
+  },
   async history() { return worker && current?.sessionId ? worker.request('history') : { entries: [], activeEntryIds: [] }; },
   async changes() { return worker && current?.sessionId ? worker.request('changes') : []; },
   async branch({ entryId }) { return exclusive(async () => { if (!worker || typeof entryId !== 'string') throw new Error('无效历史节点'); await worker.request('branch', { entryId }); return state(); }); },
@@ -192,7 +255,7 @@ const actions = {
 app.whenReady().then(async () => {
   startup.mark('electron-ready');
   protocol.handle('local-agent', async request => {
-    const url = new URL(request.url); const allowed = { '/index.html': 'text/html', '/styles.css': 'text/css', '/renderer.js': 'text/javascript', '/extension-ui.js':'text/javascript', '/pi-commands.js':'text/javascript', '/prompt-completion.js':'text/javascript', '/project-navigation.js':'text/javascript', '/execution-ui.js': 'text/javascript', '/assistant-presentation.js': 'text/javascript', '/resources-ui.js': 'text/javascript', '/message-actions.js': 'text/javascript', '/icons.js': 'text/javascript', '/markdown.js': 'text/javascript', '/review.js': 'text/javascript', '/marked.js': 'text/javascript' };
+    const url = new URL(request.url); const allowed = { '/index.html': 'text/html', '/styles.css': 'text/css', '/renderer.js': 'text/javascript', '/extension-ui.js':'text/javascript', '/pi-commands.js':'text/javascript', '/prompt-completion.js':'text/javascript', '/project-navigation.js':'text/javascript', '/execution-ui.js': 'text/javascript', '/assistant-presentation.js': 'text/javascript', '/resources-ui.js': 'text/javascript', '/message-actions.js': 'text/javascript', '/icons.js': 'text/javascript', '/markdown.js': 'text/javascript', '/rollback-ui.js':'text/javascript','/recovery-ui.js':'text/javascript','/reliability.css':'text/css','/review.js': 'text/javascript', '/marked.js': 'text/javascript' };
     allowed['/provider-avatar.js']='text/javascript';allowed['/provider-logos.svg']='image/svg+xml';allowed['/app-mark.svg']='image/svg+xml';
     if (url.hostname !== 'app' || !Object.hasOwn(allowed, url.pathname)) return new Response('Not found', { status: 404 });
     const asset = url.pathname === '/marked.js' ? resolve(project, 'node_modules/marked/lib/marked.esm.js') : resolve(directory, 'ui', url.pathname.slice(1));
@@ -239,7 +302,12 @@ app.whenReady().then(async () => {
       }
       settings.data.selectedModel = liveSmoke ? settings.config.defaultModel : 'demo/offline'; settings.data.permissions = { write: true, shell: liveSmoke }; await openProject(fixture, undefined, {createNew:true});
     } else if (settings.data.lastProject) {
-      try { await openProject(settings.data.lastProject); } catch { /* Let the user choose a new project. */ }
+      try {
+        const remembered=settings.data.projectSessions[settings.data.lastProject] || (settings.data.lastSession&&basename(settings.data.lastSession,'.jsonl'));
+        const path=remembered&&!settings.sessionMeta(settings.data.lastProject,remembered).archived?resolve(settings.data.lastProject,'.agent/sessions',remembered+'.jsonl'):undefined;
+        const resume=path?await lstat(path).then(()=>path,error=>{if(error.code==='ENOENT')return undefined;throw error;}):undefined;
+        await openProject(settings.data.lastProject,resume);
+      } catch(error) {if(error.code!=='ENOENT'){restoreError='上次会话未能恢复。原文件已保留，请检查会话或导出诊断后重试。';if(startupBenchmark)restoreFailure=redact(error.message,Object.values(settings.keys||{}));diagnostics ||= new Diagnostics(resolve(app.getPath('userData'),'logs'),{secrets:Object.values(settings.keys||{})});await diagnostics.event('restore_failed',{version:app.getVersion(),stage:'session_restore',code:error.code||'invalid_state'}).catch(()=>{});}}
     }
     startup.mark('project-ready');
   })();
@@ -251,11 +319,12 @@ app.whenReady().then(async () => {
   if(startupBenchmark) {
     await Promise.race([startup.finished,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Startup benchmark timed out')),60000))]);
     const ui=await window.webContents.executeJavaScript("({locked:document.body.inert,busy:document.body.getAttribute('aria-busy'),error:!document.getElementById('operation-error').hidden})");
-    const report={stages:startup.snapshot(),packaged:app.isPackaged,workerStarts:navigationPerformance.workerStarts,restoredSession:!!current?.sessionId,earlyUI,ui};
+    const agent=worker?await worker.request('state'):null;
+    const report={stages:startup.snapshot(),packaged:app.isPackaged,workerStarts:navigationPerformance.workerStarts,restoredSession:!!current?.sessionId,earlyUI,ui,validation:{version:app.getVersion(),sessionId:current?.sessionId||null,keyLoadError:settings.keyLoadError||null,keyStatus:settings.keyStatus(),resourceOverrides:resources.data.overrides,commands:agent?.commands.map(c=>c.command)||[],resourceErrors:agent?.resourceDiagnostics.filter(d=>d.type==='error').length||0,...(restoreFailure?{restoreFailure}:{})}};
     await writeFile(resolve(app.getPath('userData'),'startup-result.json'),JSON.stringify(report,null,2));
     shuttingDown=true;await stopWorker();app.quit();return;
   }
-  if (smoke) { const checks = await import(packageCheck ? './packaging-smoke.mjs' : navigationBenchmark ? './navigation-benchmark.mjs' : './smoke.mjs'); await (packageCheck ? checks.runPackagingSmoke : navigationBenchmark ? checks.runNavigationBenchmark : liveSmoke ? checks.runLiveSmoke : checks.runSmoke)({ window, actions, settings, project }); shuttingDown = true; await stopWorker(); app.quit(); }
+  if (smoke) { const checks = await import(reliabilitySmoke ? './reliability-smoke.mjs' : packageCheck ? './packaging-smoke.mjs' : navigationBenchmark ? './navigation-benchmark.mjs' : './smoke.mjs'); await (reliabilitySmoke ? checks.runReliabilitySmoke : packageCheck ? checks.runPackagingSmoke : navigationBenchmark ? checks.runNavigationBenchmark : liveSmoke ? checks.runLiveSmoke : checks.runSmoke)({ window, actions, settings, project,killWorker:()=>worker?.child.kill(),ownedCommands:()=>commandSupervisor?.commands.size||0 }); shuttingDown = true; await stopWorker(); app.quit(); }
 }).catch(error => { console.error(error instanceof Error ? error.stack : 'Desktop startup failed'); app.exit(1); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => { if (worker && !shuttingDown) { shuttingDown = true; worker.child.kill(); } });

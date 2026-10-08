@@ -33,7 +33,7 @@ export default function(pi) {
     if(!goal){publish(pi,ctx,'goal',{title:'目标',status:'idle',statusText:'未设置',body:''});return;}
     publish(pi,ctx,'goal',{title:'目标',status:goal.status,statusText:labels[goal.status],body:goal.objective,reason:goal.reason,usage:{tokens:goal.tokensUsed,budget:goal.tokenBudget,rounds:goal.rounds,maxTurns:goal.maxTurns,evaluationTokens:goal.evaluationTokens}},active()?[{label:'暂停目标',command:'/goal pause'}]:goal.status!=='complete'?[{label:'恢复目标',command:'/goal resume'},{label:'清除',command:'/goal clear'}]:[{label:'清除',command:'/goal clear'}]);
   }
-  function persist(){if(goal)goal.evidence=evidence;pi.appendEntry(TYPE,goal?structuredClone(goal):null);show();}
+  function persist(){if(goal)goal.evidence=evidence;pi.appendEntry(TYPE,goal?structuredClone(goal):null);pi.events.emit('workbench:workflow-state',{version:1,type:TYPE,data:goal?structuredClone(goal):null});show();}
   function pause(reason,status='paused'){epoch++;verifierAbort?.abort();if(active()){goal.status=status;goal.reason=reason;persist();}}
   const inPlan=()=>planning || hostPlanning;
   pi.events.on('workbench:plan-state',value=>{planning=!!value?.active;if(planning)pause('规划模式中，目标自动执行已暂停。');else show();});

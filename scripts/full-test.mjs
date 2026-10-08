@@ -68,6 +68,7 @@ if(build.status === 'passed') {
     const smoke=JSON.parse(await readFile(resolve(root,'.agent/verification/desktop-smoke.json'),'utf8'));assert(Date.parse(smoke.timestamp)>=started);assert.deepEqual(smoke.errors,[]);
     await copyFile(resolve(root,'.agent/verification/desktop-smoke.json'),resolve(folder,'desktop-smoke.json'));return {...result,checks:smoke.checks.length,rendererErrors:smoke.errors.length,engine:'official Pi'};
   });
+  await phase('desktop-crash-recovery-and-rollback',()=>run('desktop-reliability',process.execPath,['scripts/verify-reliability.mjs']));
   if(live) {
     await phase('public-pi-market-read',async()=>{
       const {ResourceMarket}=await import('../desktop/resource-market.mjs');const market=new ResourceMarket();const found=await market.search({query:'theme'});assert(found.items.length>0);

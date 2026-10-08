@@ -8,6 +8,8 @@
 
 - **项目与会话**：展开各项目的会话、搜索、重命名、置顶、归档和删除；切换项目不自动新建会话。
 - **对话与执行过程**：最终回答独立显示，支持流式输出；中间说明、思考与工具调用整体折叠，可展开查看。
+- **中断与诊断**：执行进程意外退出后，可查看未完成输出、核实待确认工具并继续任务；已确认的工具不会由恢复程序自动重放。默认诊断仅包含状态与用量，可在保存前预览。
+- **文件撤销**：保存任务开始时的原始文件字节，支持新建、更新、删除文件的预览撤销和撤回撤销；任务后的人工改动会显示冲突，阻止覆盖。命令与插件造成的改动需手动选择。
 - **文件与改动**：浏览项目文件、用 `@` 添加文件上下文、查看统一或双栏差异、复制消息与代码。
 - **模型接入**：内置 11 家提供方预设，可搜索模型、配置密钥，也可接入自定义兼容服务。
 - **Pi 资源**：按扩展、技能、提示模板和主题管理资源；支持本地、npm 和 Git 来源，以及市场浏览、启停和移除。
@@ -20,12 +22,12 @@
 
 | 发行文件 | 使用方式 |
 | --- | --- |
-| `Pi-desktop-Setup-0.1.2-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
-| `Pi-desktop-0.1.2-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
+| `Pi-desktop-Setup-0.1.4-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
+| `Pi-desktop-0.1.4-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
 
 免安装版需要保留解压后的完整目录，不能只复制 exe。项目所需的 Git、Python、Java 等工具由项目环境提供。
 
-仓库只保存源码和必要文件，安装包不放入 Git。对外分发使用 [GitHub Releases](https://github.com/XIAOXUsop/Pi-desktop/releases)：发布版本后，在 Assets 中选择安装版 exe 或免安装版 ZIP；页面没有 Assets 时表示尚未上传安装包。**Code → Download ZIP 下载的是源码，不能直接安装。** Windows x64 发行文件也可按下方步骤自行构建。
+仓库只保存源码和必要文件，安装包不放入 Git。下载 [0.1.4 预发布版本](https://github.com/XIAOXUsop/Pi-desktop/releases/tag/v0.1.4)，在 Assets 中选择安装版 exe 或免安装版 ZIP，并可使用同页 SHA256 校验文件。**Code → Download ZIP 下载的是源码，不能直接安装。** Windows x64 发行文件也可按下方步骤自行构建。
 
 ### 模型与密钥
 
@@ -43,6 +45,16 @@ Windows 用户或系统环境变量中的 `DEEPSEEK_API_KEY` 会自动读取。�
 4. 在执行过程中查看步骤，在改动面板审阅文件差异；可停止任务或发送插话。
 
 新配置默认只读。工具权限开关控制模型的文件与命令工具；Pi 扩展本身运行本机代码，不受这些开关隔离。
+
+### 文件撤销与中断恢复
+
+打开右侧“改动”，选择最近一次修改任务并点击“撤销文件修改”，核对文件后确认。仅可直接撤销当前分支最近一次有修改的任务。默认单文件 16 MiB、单任务 128 MiB、总容量 512 MiB，保留 20 个任务；可在面板的“保存设置”中调整或保留某个检查点。密钥、依赖与未跟踪的构建产物默认排除；范围不完整时会显示原因。
+
+检查点保存在项目 `.agent/checkpoints/`，不会提交到 Git。它覆盖已记录的文件范围，不能恢复数据库、联网操作等外部副作用。
+
+中断后不会自动发送模型请求。点击“继续任务”前，应核实结果待确认的工具与命令。目标存在未知用量时会暂停预算恢复；不会把未知用量清零。
+
+撤销过程中退出应用时，重新打开原会话，在“改动”中选择继续撤销或恢复到撤销前。处理完成前会阻止新任务。
 
 ### 规划与持续目标
 
@@ -90,7 +102,7 @@ npm run desktop:benchmark -- --development
 npm run desktop:benchmark
 ```
 
-基准使用隐藏窗口和隔离配置，复制当前会话进行恢复，不操作原项目、不发送模型请求。结果位于本地 `.agent/verification/startup/`，分别记录窗口加载、环境密钥读取、会话恢复和对话就绪时间。增加 `--empty` 可检查没有项目的启动。
+基准使用隐藏窗口和隔离配置，复制当前会话进行恢复，不操作原项目、不发送模型请求。结果位于本地 `.agent/verification/startup/`，分别记录窗口加载、环境密钥读取、会话恢复和对话就绪时间。支持 `--runs=5`、`--empty`、`--missing-project`、`--interrupted` 和 `--many-checkpoints`；后两项需要当前项目已有保存的会话。
 
 ## 构建 Windows 安装包
 
@@ -114,6 +126,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-desktop.
 ```
 
 当前未配置 Windows 代码签名证书，也未实现自动更新。
+
+安装升级验收脚本 `scripts/verify-installation.ps1` 使用测试生成的配置副本，验证旧版安装、升级、密钥解密、会话与扩展状态保留、卸载保留数据。默认要求没有注册 Pi-desktop 安装的 Windows 测试账号；使用 `-IsolateExistingRegistration` 可临时改名备份这款应用的两项当前用户登记，测试后恢复登记和同名快捷方式，保留原安装目录。系统级安装仍会被拒绝。使用 `-FixtureProfile <桌面测试配置目录>` 指定全量桌面测试创建的配置。
 
 ## 测试
 
@@ -153,3 +167,11 @@ npm run test:all     # 完整离线测试、覆盖率和真实 Electron 窗口�
 ## 第三方资源
 
 官方 Pi 依赖通过 npm 安装。提供方图标的许可与来源保留在 [provider-logos.LICENSE](desktop/ui/provider-logos.LICENSE) 和 [provider-logos.NOTICE.md](desktop/ui/provider-logos.NOTICE.md)。
+
+## 测试与评测
+
+`npm run test:all` 运行离线回归、真实 Electron 界面与中断恢复/撤销检查，不发送模型请求。Windows CI 使用锁文件安装并执行同一套检查；候选发行包额外验证官方 Pi 插件、内置运行时、恢复、撤销与命令清理。
+
+`npm run eval:offline` 检查 20 个公开生成任务的初始失败。配置 Python 路径 `EVAL_PYTHON` 后可执行 Python 任务；Java 任务需要 JDK。`npm run eval:live -- --pilot` 先运行三个任务；完整评测使用 DeepSeek，支持 `--baseline=<源码目录>` 比较基线，默认重复三次，单次执行预算上限 300 万 token。需配置 `DEEPSEEK_API_KEY`；未知用量保留预算预留，不作为零消耗处理。使用 `EVAL_TOKEN_BUDGET` 设置本次可用额度，跨多次执行时应扣除之前用量；`--resume=<评测目录>` 仅补跑缺失任务，必须沿用该目录的原预算。`--only=<任务ID>` 可进行针对性补测。报告和轨迹仅保存在本地 `.agent/evals/`，`scripts/summarize-evals.mjs <ledger.json>` 可离线核对验收、回答延迟、工具耗时和有效文件哈希。
+
+当前 Windows 发行包未进行代码签名。卸载保留本机配置和项目会话；删除会话不删除项目文件。

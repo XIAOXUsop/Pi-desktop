@@ -74,7 +74,7 @@ export async function verifyWorkflows({actions,project,js,until,snapshot,bundled
     assert.equal(await readFile(resolve(workspace,'workflow.txt'),'utf8'),'after');
     assert(await js("document.querySelectorAll('.execution-group').length===1 && !document.querySelector('.execution-group').open && document.querySelectorAll('#messages > .message.assistant').length>=1"),'goal continuation retains one collapsed process with final output');
     await js("document.querySelector('[data-workflow=goal] details').open=true");await snapshot('desktop-workflow-goal.png');
-    scenario='held';main=0;await fresh();await submit('/goal 持续检查项目');await until(()=>js("!document.getElementById('stop').hidden"),'goal running');
+    scenario='held';main=0;await fresh();await submit('/goal 持续检查项目');await until(async()=>main===1 && !!heldResponse && await js("!document.getElementById('stop').hidden"),'goal streaming response');
     await submit('/goal pause');await until(async()=>(await card('goal'))?.status==='paused','pause via composer during stream');
     assert.equal(main,1);await js("document.getElementById('stop').click()");await idle();
     await sync();assert.equal((await card('goal')).status,'paused');assert.equal(main,1);await snapshot('desktop-workflow-paused.png');

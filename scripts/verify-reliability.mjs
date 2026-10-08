@@ -1,0 +1,13 @@
+import {mkdir,mkdtemp,readFile} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawn} from 'node:child_process';
+import {createRequire} from 'node:module';
+import assert from 'node:assert/strict';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),parent=resolve(root,'.agent/verification/reliability');await mkdir(parent,{recursive:true});
+const profile=await mkdtemp(resolve(parent,'profile-')),binary=process.argv[2]||createRequire(import.meta.url)('electron');
+const args=[...(process.argv[2]?[]:[resolve(root,'desktop/main.mjs')]),'--reliability-smoke','--test-profile',profile];
+const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;for(const name of Object.keys(env))if(/API_?KEY|TOKEN|SECRET|PASSWORD/i.test(name))delete env[name];
+const child=spawn(binary,args,{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const timer=setTimeout(()=>child.kill(),90000);
+const code=await new Promise((accept,reject)=>{child.once('error',reject);child.once('close',accept);}).finally(()=>clearTimeout(timer));assert.equal(code,0,output);
+const report=JSON.parse(await readFile(resolve(profile,'verification/reliability-smoke.json')));console.log(JSON.stringify({profile,checks:report.checks.length,status:'passed'}));

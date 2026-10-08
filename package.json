@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Pi-desktop local coding agent desktop application",
@@ -21,13 +21,16 @@
     "desktop:demo": "npm run build && node scripts/start-desktop.mjs --demo",
     "desktop:smoke": "npm run build && node scripts/start-desktop.mjs --smoke",
     "desktop:live": "npm run build && node scripts/start-desktop.mjs --live-smoke",
-    "test:desktop": "npm run build && node --test test/desktop.test.mjs test/pi-desktop.test.mjs test/execution-ui.test.mjs test/resource-market.test.mjs test/pi-input.test.mjs test/workflows.test.mjs test/model-catalog.test.mjs test/startup.test.mjs",
+    "test:desktop": "npm run build && node --test test/*.test.mjs",
     "desktop:benchmark": "node scripts/benchmark-startup.mjs",
     "acceptance:live": "npm run build && node scripts/live-acceptance.mjs",
     "test:all": "node scripts/full-test.mjs",
     "test:all:live": "node scripts/full-test.mjs --live",
     "package:verify": "node scripts/verify-package.mjs",
-    "package:win": "npm run build && powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/create-app-icon.ps1 && node scripts/prepare-desktop-package.mjs && electron-builder --config electron-builder.cjs --win --x64 --dir --publish never && npm run package:verify && electron-builder --config electron-builder.cjs --win --x64 --prepackaged release/win-unpacked --publish never"
+    "package:win": "npm run build && powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/create-app-icon.ps1 && node scripts/prepare-desktop-package.mjs && electron-builder --config electron-builder.cjs --win --x64 --dir --publish never && npm run package:verify && electron-builder --config electron-builder.cjs --win --x64 --prepackaged release/win-unpacked --publish never",
+    "eval:offline": "node scripts/agent-evals.mjs --offline",
+    "eval:live": "node scripts/agent-evals.mjs",
+    "desktop:reliability": "npm run build && node scripts/verify-reliability.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.0.1",

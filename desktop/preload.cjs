@@ -3,6 +3,8 @@ const methods = ['searchResourceMarket', 'resourceMarketDetail', 'createResource
 methods.push('sessionInfo','compactSession','exportSession','completePrompt','piAction');
 methods.push('extensionCommand','extensionResponse');
 methods.push('startupReady');
+methods.push('listRuns','getRecoveryState','recoverRun','exportDiagnostics');
+methods.push('listCheckpoints','previewRollback','applyRollback','inverseRollback','resumeRollback','pinCheckpoint','setCheckpointLimits');
 const api = Object.fromEntries(methods.map(method => [method, async params => {
   const response = await ipcRenderer.invoke('agent:invoke', method, params);
   if (!response.ok) throw new Error(response.error); return response.result;

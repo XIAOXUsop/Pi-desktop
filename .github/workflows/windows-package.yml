@@ -1,0 +1,29 @@
+name: Windows release candidate
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+          cache: npm
+      - run: npm ci
+      - run: npm run test:all
+      - run: npm run package:win
+      - run: node scripts/release-checksums.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pi-desktop-Windows
+          path: |
+            release/Pi-desktop-Setup-*.exe
+            release/Pi-desktop-*-Windows-x64.zip
+            release/Pi-desktop-*-SHA256SUMS.txt
+          retention-days: 14

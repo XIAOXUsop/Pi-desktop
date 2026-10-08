@@ -8,7 +8,7 @@ import {piModule} from './pi-native.mjs';
 import {parsePiImport} from './session-transfer.mjs';
 const exec=promisify(execFile);
 
-export function piHostActions({settings,resources,worker,current,window,dialog,app,state,exclusive,openProject,reloadWorker}) {
+export function piHostActions({settings,resources,worker,current,window,dialog,app,state,exclusive,openProject,reloadWorker,desktopDiagnostics}) {
   const requireSession=()=>{if(!worker() || !current()?.sessionId)throw new Error('请先选择或新建会话');return worker();};
   return {
     async completePrompt(input) {
@@ -36,6 +36,7 @@ export function piHostActions({settings,resources,worker,current,window,dialog,a
         let destination;
         if(input.delivery==='zip') {const choice=await dialog.showSaveDialog(window(),{title:'保存 Pi 问题报告',defaultPath:'pi-bug-report.zip',filters:[{name:'问题报告',extensions:['zip']}]});if(choice.canceled)return {cancelled:true};destination=choice.filePath;}
         const bundle=await client.request('bug_bundle',{hint:typeof input.hint==='string'?input.hint.slice(0,8192):'',includeSession:input.includeSession===true,includeSummary:input.includeSummary===true},600000);
+        if(desktopDiagnostics)bundle.metadata.desktop=await desktopDiagnostics();
         if(destination) {const {writeBugReportArchive}=await piModule('core/bug-report.js');await writeBugReportArchive(bundle,destination);return {path:destination};}
         const {uploadBugReport}=await piModule('core/bug-report-upload.js');return uploadBugReport(bundle,{signal:AbortSignal.timeout(120000)});
       });

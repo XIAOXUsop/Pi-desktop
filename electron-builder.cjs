@@ -3,7 +3,7 @@ module.exports={
   directories:{output:'release',buildResources:'build'},
   electronDist:'node_modules/electron/dist',asar:true,npmRebuild:false,
   asarUnpack:['**/*.node','**/*.exe','**/*.wasm'],
-  files:['desktop/**','!desktop/*-smoke.mjs','!desktop/smoke.mjs','!desktop/navigation-benchmark.mjs','desktop/packaging-smoke.mjs','dist/src/**','!dist/**/*.map','configs/deepseek.json','build/app.ico','package.json'],
+  files:['desktop/**','!desktop/*-smoke.mjs','!desktop/smoke.mjs','!desktop/navigation-benchmark.mjs','desktop/packaging-smoke.mjs','desktop/reliability-smoke.mjs','dist/src/**','!dist/**/*.map','configs/deepseek.json','build/app.ico','package.json'],
   extraResources:[{from:'build/runtime',to:'runtime'},{from:'packages/pi-workflows',to:'pi-workflows'}],
   // The builder excludes root node_modules even in extraResources. npm must
   // retain its complete dependency tree to work without a system installation.
