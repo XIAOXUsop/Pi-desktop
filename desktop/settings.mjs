@@ -1,24 +1,16 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { parseConfig } from '../dist/src/index.js';
 import { providerPresets, normalizeBaseUrl, officialModelLimits, presetModelProvider } from './provider-presets.mjs';
+import {persistentKey,persistentKeys} from './environment-keys.mjs';
+export {persistentKey} from './environment-keys.mjs';
 
-const exec = promisify(execFile);
 export async function atomicJson(path, value) {
   const temporary = `${path}.${randomUUID()}.tmp`; await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600 }); await rename(temporary, path);
 }
-export async function persistentKey(name) {
-  if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) throw new Error('Invalid key variable name');
-  if (process.env[name]) return process.env[name]; if (process.platform !== 'win32') return undefined;
-  const command = `$v = [Environment]::GetEnvironmentVariable('${name}', 'User'); if ([string]::IsNullOrWhiteSpace($v)) { $v = [Environment]::GetEnvironmentVariable('${name}', 'Machine') }; if (-not [string]::IsNullOrWhiteSpace($v)) { [Console]::Write($v) }`;
-  try { const { stdout } = await exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], { windowsHide: true, timeout: 10000, maxBuffer: 16384 }); return stdout.trim() || undefined; }
-  catch { return undefined; }
-}
 export class SettingsStore {
-  constructor(folder, defaultConfig, vault) { this.folder = folder; this.defaultConfig = defaultConfig; this.vault = vault; this.keys = {}; this.saving = Promise.resolve(); }
+  constructor(folder, defaultConfig, vault, onStage = () => {}) { this.folder = folder; this.defaultConfig = defaultConfig; this.vault = vault; this.keys = {}; this.saving = Promise.resolve(); this.onStage = onStage; }
   async load() {
     await mkdir(this.folder, { recursive: true });
     try { this.data = JSON.parse(await readFile(resolve(this.folder, 'settings.json'), 'utf8')); }
@@ -26,8 +18,10 @@ export class SettingsStore {
     this.data.mode ??= 'build'; this.data.sessionMetadata ??= {};
     this.data.projectSessions ??= {};
     this.data.preferences = { theme: 'light', panelWidth: 440, diffStyle: 'unified', panelVisible: false, ...this.data.preferences };
+    this.onStage('settings-file-ready');
     try { this.config = parseConfig(JSON.parse(await readFile(resolve(this.folder, 'models.json'), 'utf8'))).config; }
     catch (error) { if (error.code !== 'ENOENT') throw error; this.config = parseConfig(JSON.parse(await readFile(this.defaultConfig, 'utf8'))).config; }
+    this.onStage('model-config-ready');
     // Existing official models receive the same documented limits as newly added presets.
     const updated = this.config.models.map(model => {
       const provider = this.config.providers.find(p => p.id === model.provider);
@@ -35,11 +29,14 @@ export class SettingsStore {
       return limits ? {...model,contextWindow:limits.contextWindow,maxOutputTokens:limits.maxOutputTokens} : model;
     });
     if (JSON.stringify(updated) !== JSON.stringify(this.config.models)) await this.saveConfig({...this.config,models:updated});
+    this.onStage('model-limits-ready');
     try {
       const encrypted = JSON.parse(await readFile(resolve(this.folder, 'keys.json'), 'utf8'));
       for (const [name, value] of Object.entries(encrypted)) this.keys[name] = await this.vault.decrypt(Buffer.from(value, 'base64'));
     } catch (error) { if (error.code !== 'ENOENT') this.keyLoadError = '本机密钥读取失败，请重新设置密钥'; }
-    for (const provider of this.config.providers) if (provider.apiKeyEnv && !this.keys[provider.apiKeyEnv]) this.keys[provider.apiKeyEnv] = await persistentKey(provider.apiKeyEnv);
+    this.onStage('vault-ready');
+    const names=this.config.providers.map(provider=>provider.apiKeyEnv).filter(name=>name&&!this.keys[name]);
+    Object.assign(this.keys,await persistentKeys(names));
     return this;
   }
   save() { const snapshot = structuredClone(this.data); this.saving = this.saving.catch(() => {}).then(() => atomicJson(resolve(this.folder, 'settings.json'), snapshot)); return this.saving; }

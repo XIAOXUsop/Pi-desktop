@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const methods = ['searchResourceMarket', 'resourceMarketDetail', 'createResource', 'listResources', 'previewResource', 'addResource', 'chooseResource', 'toggleResource', 'removeResource', 'reloadResources', 'state', 'listProjectSessions', 'copyText', 'openLink', 'chooseProject', 'openRecent', 'newSession', 'resume', 'setModel', 'setPermissions', 'setMode', 'updateSession', 'deleteSession', 'setPreferences', 'listFiles', 'readFile', 'run', 'steer', 'followUp', 'abort', 'history', 'changes', 'branch', 'saveKey', 'addModel', 'addPreset', 'updateModelLimits', 'importConfig'];
 methods.push('sessionInfo','compactSession','exportSession','completePrompt','piAction');
 methods.push('extensionCommand','extensionResponse');
+methods.push('startupReady');
 const api = Object.fromEntries(methods.map(method => [method, async params => {
   const response = await ipcRenderer.invoke('agent:invoke', method, params);
   if (!response.ok) throw new Error(response.error); return response.result;

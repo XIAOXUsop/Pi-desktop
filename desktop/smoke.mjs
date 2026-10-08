@@ -53,7 +53,7 @@ export async function runSmoke({ window, actions, settings, project }) {
   async function paletteSearch(query) {await js(`if(document.getElementById('palette-dialog').open)document.getElementById('palette-dialog').close();document.getElementById('commands').click();document.getElementById('palette-search').value=${JSON.stringify(query)};document.getElementById('palette-search').dispatchEvent(new Event('input'));`);}
   async function paletteAction(alias) {await paletteSearch(alias);assert(await js(`Array.from(document.querySelectorAll('.palette-item')).some(button=>button.dataset.command===${JSON.stringify(alias)})`),'Pi command is available: '+alias);await js(`Array.from(document.querySelectorAll('.palette-item')).find(button=>button.dataset.command===${JSON.stringify(alias)}).click()`);}
   window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
-  await until(() => js("document.getElementById('model-select').value === 'demo/offline' && !document.getElementById('send').disabled"), 'initial render');
+  await until(() => js("document.getElementById('model-select').value === 'demo/offline' && !document.getElementById('send').disabled && !document.body.inert"), 'initial render');
   const first = await actions.state(); const sessionId = first.agent.sessionId;
   // Validate bundled resources separately from the legacy fixture catalogue.
   const bundledSource=(await actions.listResources()).sources.find(source=>source.bundled);

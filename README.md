@@ -20,8 +20,8 @@
 
 | 发行文件 | 使用方式 |
 | --- | --- |
-| `Pi-desktop-Setup-0.1.1-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
-| `Pi-desktop-0.1.1-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
+| `Pi-desktop-Setup-0.1.2-x64.exe` | 双击安装，再从桌面或开始菜单打开 **Pi-desktop** |
+| `Pi-desktop-0.1.2-Windows-x64.zip` | 完整解压后运行其中的 `Pi-desktop.exe` |
 
 免安装版需要保留解压后的完整目录，不能只复制 exe。项目所需的 Git、Python、Java 等工具由项目环境提供。
 
@@ -81,6 +81,16 @@ npm run desktop:demo
 ```
 
 独立 TypeScript 核心和 CLI 也保留在仓库中，可运行 `npm run demo` 验证真实文件工具的离线闭环。
+
+### 检查启动耗时
+
+```powershell
+npm run desktop:benchmark -- --development
+# 构建安装包后，测量真实打包程序：
+npm run desktop:benchmark
+```
+
+基准使用隐藏窗口和隔离配置，复制当前会话进行恢复，不操作原项目、不发送模型请求。结果位于本地 `.agent/verification/startup/`，分别记录窗口加载、环境密钥读取、会话恢复和对话就绪时间。增加 `--empty` 可检查没有项目的启动。
 
 ## 构建 Windows 安装包
 

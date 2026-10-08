@@ -1,3 +1,4 @@
+import { startup } from './startup.mjs';
 import { app, BrowserWindow, ipcMain, dialog, protocol, safeStorage, utilityProcess, clipboard, shell } from 'electron';
 import { readFile, mkdir, readdir, stat, realpath, writeFile, mkdtemp } from 'node:fs/promises';
 import { resolve, dirname, basename, isAbsolute } from 'node:path';
@@ -13,19 +14,22 @@ import { ResourceMarket } from './resource-market.mjs';
 import {piBuiltinCommands} from './pi-native.mjs';
 import {piHostActions} from './pi-host-actions.mjs';
 const resourceMarket = new ResourceMarket();
+startup.mark('imports-ready');
 
 const directory = dirname(fileURLToPath(import.meta.url)); const project = resolve(directory, '..');
 const liveSmoke = process.argv.includes('--live-smoke');
 const navigationBenchmark = process.argv.includes('--navigation-benchmark');
 const packageCheck = process.argv.includes('--package-check');
-const smoke = packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke'); const demo = smoke || process.argv.includes('--demo');
+const startupBenchmark = process.argv.includes('--startup-benchmark');
+const demo = packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke') || process.argv.includes('--demo');
+const smoke = startupBenchmark || packageCheck || liveSmoke || navigationBenchmark || process.argv.includes('--smoke');
 const ENTRY = 'local-agent://app/index.html';
 protocol.registerSchemesAsPrivileged([{ scheme: 'local-agent', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
-if(packageCheck){const folder=process.argv[process.argv.indexOf('--test-profile')+1];if(!folder||!isAbsolute(folder))throw new Error('Packaged verification requires an absolute test profile');app.setPath('userData',folder);}
+if(packageCheck || startupBenchmark){const folder=process.argv[process.argv.indexOf('--test-profile')+1];if(!folder||!isAbsolute(folder))throw new Error('Verification requires an absolute test profile');app.setPath('userData',folder);}
 else if (!app.isPackaged) app.setPath('userData', resolve(project, '.agent', smoke ? `desktop-smoke-profile/run-${Date.now()}` : 'desktop-profile'));
 else app.setPath('userData',resolve(app.getPath('appData'),'Pi-desktop'));
 if(!smoke){if(!app.requestSingleInstanceLock())app.quit();app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});}
-let window; let settings; let resources; let worker; let workerOpening; let current; let lastResult; let changing = false; let shuttingDown = false;
+let window; let settings; let resources; let worker; let workerOpening; let current; let lastResult; let changing = false; let shuttingDown = false; let initialization;
 const navigationPerformance = {workerStarts:0,switches:[]};
 function tools() { return ['list', 'read', ...(settings.data.permissions.write ? ['write', 'edit'] : []), ...(settings.data.permissions.shell ? ['shell'] : [])]; }
 function modelKey() { return settings.data.selectedModel ?? settings.config.defaultModel; }
@@ -99,6 +103,7 @@ async function knownProject(path=current?.workspace) {
 }
 const actions = {
   state,
+  async startupReady({phase}={}) { if(!['renderer-state','renderer-history','renderer-ready'].includes(phase))throw new Error('Invalid startup stage');startup.mark(phase);return null; },
   async extensionCommand({prompt}) {if(changing || !worker || typeof prompt!=='string' || prompt.length>256*1024)throw new Error('请选择有效扩展指令');return worker.request('command',{prompt});},
   async extensionResponse(input) {if(!worker || changing)throw new Error('会话已切换');return worker.request('extension_response',input);},
   completePrompt:input=>commandHost().completePrompt(input),
@@ -183,6 +188,7 @@ const actions = {
   }); },
 };
 app.whenReady().then(async () => {
+  startup.mark('electron-ready');
   protocol.handle('local-agent', async request => {
     const url = new URL(request.url); const allowed = { '/index.html': 'text/html', '/styles.css': 'text/css', '/renderer.js': 'text/javascript', '/extension-ui.js':'text/javascript', '/pi-commands.js':'text/javascript', '/prompt-completion.js':'text/javascript', '/project-navigation.js':'text/javascript', '/execution-ui.js': 'text/javascript', '/assistant-presentation.js': 'text/javascript', '/resources-ui.js': 'text/javascript', '/message-actions.js': 'text/javascript', '/icons.js': 'text/javascript', '/markdown.js': 'text/javascript', '/review.js': 'text/javascript', '/marked.js': 'text/javascript' };
     allowed['/provider-avatar.js']='text/javascript';allowed['/provider-logos.svg']='image/svg+xml';allowed['/app-mark.svg']='image/svg+xml';
@@ -196,34 +202,54 @@ app.whenReady().then(async () => {
     encrypt: async value => safeStorage.encryptStringAsync ? safeStorage.encryptStringAsync(value) : safeStorage.encryptString(value),
     decrypt: async value => safeStorage.decryptStringAsync ? (await safeStorage.decryptStringAsync(value)).result : safeStorage.decryptString(value),
   };
-  settings = await new SettingsStore(app.getPath('userData'), resolve(project, 'configs/deepseek.json'), vault).load();
-  resources = await new ResourceManager(app.getPath('userData')).load();
-  await resources.installBundledWorkflows(resolve(project,'packages/pi-workflows'));
-  if (demo) {
-    const folder = resolve(packageCheck ? app.getPath('userData') : project, '.agent/desktop-demo'); await mkdir(folder, { recursive: true });
-    const fixture = await mkdtemp(resolve(folder, 'project-')); await writeFile(resolve(fixture, 'hello.txt'), 'Hello, world!\r\n');
-    if (liveSmoke) {
-      await writeFile(resolve(fixture, 'package.json'), JSON.stringify({ private: true, type: 'module', scripts: { test: 'node --test greeting.test.mjs' } }, null, 2));
-      await writeFile(resolve(fixture, 'greeting.test.mjs'), "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { readFile } from 'node:fs/promises';\ntest('greeting is updated', async () => assert.equal(await readFile('hello.txt', 'utf8'), 'Hello, coding agent!\\r\\n'));\n");
-    }
-    settings.data.selectedModel = liveSmoke ? settings.config.defaultModel : 'demo/offline'; settings.data.permissions = { write: true, shell: liveSmoke }; await openProject(fixture, undefined, {createNew:true});
-  } else if (settings.data.lastProject) {
-    try { await openProject(settings.data.lastProject); } catch { /* Let the user choose a new project. */ }
-  }
-  window = new BrowserWindow({ width: 1450, height: 930, minWidth: 1050, minHeight: 700, show: !smoke, backgroundColor: '#f5f7fa', title: 'Pi-desktop', icon:resolve(project,'build/app.ico'),
+  // Paint the local window while credentials and the Pi session initialize.
+  // IPC operations wait for that initialization, so an early click cannot
+  // change the project while its saved session is still being restored.
+  window = new BrowserWindow({ width: 1450, height: 930, minWidth: 1050, minHeight: 700, show: false, backgroundColor: '#f5f7fa', title: 'Pi-desktop', icon:resolve(project,'build/app.ico'),
     webPreferences: { preload: resolve(directory, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !smoke } });
+  startup.mark('window-created');
+  window.once('ready-to-show',()=>{startup.mark('window-paint-ready');if(!smoke && !shuttingDown){window.show();window.focus();}});
   window.removeMenu(); window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== ENTRY) event.preventDefault(); });
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
   ipcMain.handle('agent:invoke', async (event, method, params = {}) => {
     if (event.sender !== window.webContents || event.senderFrame?.url !== ENTRY) throw new Error('Invalid IPC sender');
     if (!Object.hasOwn(actions, method)) throw new Error('Unknown application action');
-    try { return { ok: true, result: await actions[method](params) }; }
+    try { if(method!=='startupReady')await initialization;return { ok: true, result: await actions[method](params) }; }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败' }; }
   });
   window.on('close', event => { if (!shuttingDown && worker) { event.preventDefault(); shuttingDown = true; void stopWorker().finally(() => app.quit()); } });
-  await window.loadURL(ENTRY);
-  if (!smoke) { window.show(); window.focus(); }
+  initialization=(async()=>{
+    settings = await new SettingsStore(app.getPath('userData'), resolve(project, 'configs/deepseek.json'), vault,stage=>startup.mark(stage)).load();
+    startup.mark('settings-ready');
+    resources = await new ResourceManager(app.getPath('userData')).load();
+    await resources.installBundledWorkflows(resolve(project,'packages/pi-workflows'));
+    startup.mark('resources-ready');
+    if (demo) {
+      const folder = resolve(packageCheck ? app.getPath('userData') : project, '.agent/desktop-demo'); await mkdir(folder, { recursive: true });
+      const fixture = await mkdtemp(resolve(folder, 'project-')); await writeFile(resolve(fixture, 'hello.txt'), 'Hello, world!\r\n');
+      if (liveSmoke) {
+        await writeFile(resolve(fixture, 'package.json'), JSON.stringify({ private: true, type: 'module', scripts: { test: 'node --test greeting.test.mjs' } }, null, 2));
+        await writeFile(resolve(fixture, 'greeting.test.mjs'), "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { readFile } from 'node:fs/promises';\ntest('greeting is updated', async () => assert.equal(await readFile('hello.txt', 'utf8'), 'Hello, coding agent!\\r\\n'));\n");
+      }
+      settings.data.selectedModel = liveSmoke ? settings.config.defaultModel : 'demo/offline'; settings.data.permissions = { write: true, shell: liveSmoke }; await openProject(fixture, undefined, {createNew:true});
+    } else if (settings.data.lastProject) {
+      try { await openProject(settings.data.lastProject); } catch { /* Let the user choose a new project. */ }
+    }
+    startup.mark('project-ready');
+  })();
+  let earlyUI;
+  await Promise.all([initialization,window.loadURL(ENTRY).then(async()=>{
+    startup.mark('document-loaded');
+    if(startupBenchmark)earlyUI={backendReady:startup.stages.some(item=>item.stage==='project-ready'),...await window.webContents.executeJavaScript("({locked:document.body.inert,busy:document.body.getAttribute('aria-busy')})")};
+  })]);
+  if(startupBenchmark) {
+    await Promise.race([startup.finished,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Startup benchmark timed out')),60000))]);
+    const ui=await window.webContents.executeJavaScript("({locked:document.body.inert,busy:document.body.getAttribute('aria-busy'),error:!document.getElementById('operation-error').hidden})");
+    const report={stages:startup.snapshot(),packaged:app.isPackaged,workerStarts:navigationPerformance.workerStarts,restoredSession:!!current?.sessionId,earlyUI,ui};
+    await writeFile(resolve(app.getPath('userData'),'startup-result.json'),JSON.stringify(report,null,2));
+    shuttingDown=true;await stopWorker();app.quit();return;
+  }
   if (smoke) { const checks = await import(packageCheck ? './packaging-smoke.mjs' : navigationBenchmark ? './navigation-benchmark.mjs' : './smoke.mjs'); await (packageCheck ? checks.runPackagingSmoke : navigationBenchmark ? checks.runNavigationBenchmark : liveSmoke ? checks.runLiveSmoke : checks.runSmoke)({ window, actions, settings, project }); shuttingDown = true; await stopWorker(); app.quit(); }
 }).catch(error => { console.error(error instanceof Error ? error.stack : 'Desktop startup failed'); app.exit(1); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

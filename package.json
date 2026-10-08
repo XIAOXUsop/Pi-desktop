@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Pi-desktop local coding agent desktop application",
@@ -21,7 +21,8 @@
     "desktop:demo": "npm run build && node scripts/start-desktop.mjs --demo",
     "desktop:smoke": "npm run build && node scripts/start-desktop.mjs --smoke",
     "desktop:live": "npm run build && node scripts/start-desktop.mjs --live-smoke",
-    "test:desktop": "npm run build && node --test test/desktop.test.mjs test/pi-desktop.test.mjs test/execution-ui.test.mjs test/resource-market.test.mjs test/pi-input.test.mjs test/workflows.test.mjs test/model-catalog.test.mjs",
+    "test:desktop": "npm run build && node --test test/desktop.test.mjs test/pi-desktop.test.mjs test/execution-ui.test.mjs test/resource-market.test.mjs test/pi-input.test.mjs test/workflows.test.mjs test/model-catalog.test.mjs test/startup.test.mjs",
+    "desktop:benchmark": "node scripts/benchmark-startup.mjs",
     "acceptance:live": "npm run build && node scripts/live-acceptance.mjs",
     "test:all": "node scripts/full-test.mjs",
     "test:all:live": "node scripts/full-test.mjs --live",

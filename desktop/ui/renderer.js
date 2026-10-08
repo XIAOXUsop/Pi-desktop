@@ -541,7 +541,7 @@ resize.onpointermove = event => { if (!resizing) return; document.documentElemen
 resize.onpointerup = event => { if (!resizing) return; resizing = undefined; document.body.classList.remove('resizing'); resize.releasePointerCapture(event.pointerId); void guard(() => preference({ panelWidth: parseFloat(document.documentElement.style.getPropertyValue('--panel-width')) })); };
 resize.onpointercancel = resize.onlostpointercapture = () => { if(!resizing) return; resizing = undefined; document.body.classList.remove('resizing'); applyPreferences(); };
 resize.onkeydown = event => { if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) { event.preventDefault(); const width = $('activity').getBoundingClientRect().width; void guard(() => preference({ panelWidth: resizeLimit(event.key === 'Home' ? 300 : event.key === 'End' ? 800 : width + (event.key === 'ArrowLeft' ? 30 : -30)) })); } };
-document.onkeydown = event => { if (event.isComposing || !(event.ctrlKey || event.metaKey)) return; const key = event.key.toLowerCase();
+document.onkeydown = event => { if (document.body.inert || event.isComposing || !(event.ctrlKey || event.metaKey)) return; const key = event.key.toLowerCase();
   if (key === 'k') { event.preventDefault(); if (!$('palette-dialog').open) openPalette(); return; }
   if (document.querySelector('dialog[open]')) return;
   const actions = { o: () => $('open-project').click(), n: () => $('new-session').click(), p: openPicker, b: () => $('sidebar-toggle').click(), l: () => $('prompt').focus(), '.': () => { if (running) $('stop').click(); } }; if (actions[key]) { event.preventDefault(); actions[key](); }
@@ -655,4 +655,17 @@ $('import-config').onclick = () => switchView(() => api.importConfig());
 $('key-form').onsubmit = event => { event.preventDefault(); void guard(async () => { const providerId = $('key-provider').value; const key = $('api-key').value; const persist = $('persist-key').checked; if (await switchView(() => api.saveKey({ providerId, key, persist }))) { $('api-key').value = ''; $('key-hint').textContent = '密钥已设置。'; } }); };
 $('model-form').onsubmit = event => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void guard(async () => { if (await switchView(() => api.addModel({ providerId: data.get('providerId'), modelId: data.get('modelId'), baseUrl: data.get('baseUrl'), protocol: data.get('protocol'), legacyTokens: data.has('legacyTokens'), contextWindow: Number(data.get('contextWindow')), maxOutputTokens: Number(data.get('maxOutputTokens')) }))) { form.reset(); toast('模型已添加，请为服务设置密钥。'); } }); };
 themeMedia.addEventListener('change', () => state && applyPreferences()); window.addEventListener('beforeunload', saveDraft);
-void guard(async () => { applyState(await api.state()); await loadHistory(); if (state.project) await loadFiles(); if (state.keyLoadError) toast(state.keyLoadError); });
+$('messages').append(node('div','welcome','正在恢复工作区…'));
+$('run-status').textContent='正在启动';
+void (async()=>{
+  const ready=await guard(async()=>{
+    applyState(await api.state());await api.startupReady?.({phase:'renderer-state'});
+    await loadHistory();await api.startupReady?.({phase:'renderer-history'});
+    if(state.project && state.preferences.panelVisible)await loadFiles();
+    if(state.keyLoadError)toast(state.keyLoadError);
+    return true;
+  });
+  document.body.inert=false;document.body.setAttribute('aria-busy','false');
+  if(ready)await api.startupReady?.({phase:'renderer-ready'});
+  else $('run-status').textContent='启动遇到问题，请重新打开';
+})();

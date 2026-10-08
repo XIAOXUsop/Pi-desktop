@@ -12,7 +12,7 @@ export async function runPackagingSmoke({window,actions,settings,project}){
   const runtime=resolve(process.resourcesPath,'runtime'),manifest=JSON.parse(await readFile(resolve(runtime,'runtime-manifest.json'),'utf8'));
   assert(process.env.PATH.split(';')[0]===runtime);await readFile(resolve(runtime,'node.exe'));
   checks.push('bundled Node and npm take precedence without a system Node installation');
-  await until(()=>js("document.getElementById('model-select').value==='demo/offline'&&!document.getElementById('send').disabled"),'renderer ready');
+  await until(()=>js("document.getElementById('model-select').value==='demo/offline'&&!document.getElementById('send').disabled&&!document.body.inert"),'renderer ready');
   assert(await js("document.querySelector('.brand strong').textContent==='Pi-desktop'"));
   await until(()=>js("document.querySelector('.brand-mark img')?.complete&&document.querySelector('.brand-mark img')?.naturalWidth>0"),'application brand image');
   checks.push('application brand SVG loads through the packaged local protocol');
