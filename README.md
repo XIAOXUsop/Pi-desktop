@@ -175,3 +175,7 @@ npm run test:all     # 完整离线测试、覆盖率和真实 Electron 窗口�
 `npm run eval:offline` 检查 20 个公开生成任务的初始失败。配置 Python 路径 `EVAL_PYTHON` 后可执行 Python 任务；Java 任务需要 JDK。`npm run eval:live -- --pilot` 先运行三个任务；完整评测使用 DeepSeek，支持 `--baseline=<源码目录>` 比较基线，默认重复三次，单次执行预算上限 300 万 token。需配置 `DEEPSEEK_API_KEY`；未知用量保留预算预留，不作为零消耗处理。使用 `EVAL_TOKEN_BUDGET` 设置本次可用额度，跨多次执行时应扣除之前用量；`--resume=<评测目录>` 仅补跑缺失任务，必须沿用该目录的原预算。`--only=<任务ID>` 可进行针对性补测。报告和轨迹仅保存在本地 `.agent/evals/`，`scripts/summarize-evals.mjs <ledger.json>` 可离线核对验收、回答延迟、工具耗时和有效文件哈希。
 
 当前 Windows 发行包未进行代码签名。卸载保留本机配置和项目会话；删除会话不删除项目文件。
+
+## License
+
+[MIT](LICENSE) © 2026 XIAOXUsop

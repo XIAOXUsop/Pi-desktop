@@ -1,6 +1,7 @@
 {
   "name": "pi-desktop",
   "version": "0.1.4",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Pi-desktop local coding agent desktop application",
